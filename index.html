@@ -779,6 +779,7 @@ async function showSavedDir(dir) {
   $('savedName').textContent = dir.name + ' · ' + savedFiles.length + ' file';
 }
 $('btnSaved').onclick = async () => {
+  if (await loadDefaultSaved()) return;
   if (window.showDirectoryPicker) {
     try {
       let dir = savedDir;
@@ -796,14 +797,45 @@ $('fDir').onchange = e => {
 $('savedList').onclick = async e => {
   const b = e.target.closest('[data-sv]'); if (!b) return;
   const f = savedFiles[+b.dataset.sv];
-  try { const file = await f.get(); play({ id: 'tmp', title: f.name.replace(/\.[^.]+$/, ''), preset: 'Rạp phim', progress: 0 }, file); }
+  try {
+    const m = { id: 'tmp', title: f.name.replace(/\.[^.]+$/, ''), preset: 'Rạp phim', progress: 0 };
+    if (f.url) { m.url = f.url; play(m); } else play(m, await f.get());
+  }
   catch (err) { toast('Không mở được file: ' + (err.message || err)); }
 };
-(async () => { try {
-  const d = await idb.getMeta('savedDir'); if (!d) return; savedDir = d;
-  if ((await d.queryPermission({ mode: 'read' })) === 'granted') await showSavedDir(d);
-  else $('savedName').textContent = d.name + ' · bấm để mở lại';
-} catch {} })();
+/* --- Thư mục mặc định: "saved edits" nằm cạnh index.html (GitHub Pages / server) --- */
+const SAVED_DIR = 'saved edits';
+const SAVED_REPO = ''; // tuỳ chọn: 'tenban/tenrepo' nếu dùng tên miền riêng
+const segEnc = s => s.split('/').map(encodeURIComponent).join('/');
+async function loadDefaultSaved() {
+  let names = null;
+  // 1) danh sách thủ công: saved edits/list.json  (["a.mp4","b.mp4"])
+  try { const r = await fetch(segEnc(SAVED_DIR) + '/list.json', { cache: 'no-cache' }); if (r.ok) names = await r.json(); } catch {}
+  // 2) GitHub API (tự nhận repo từ địa chỉ *.github.io)
+  if (!names) {
+    let repo = SAVED_REPO; const m = location.hostname.match(/^(.+)\.github\.io$/);
+    if (!repo && m) { const seg = location.pathname.split('/')[1]; repo = m[1] + '/' + (seg && !seg.includes('.') ? seg : m[1] + '.github.io'); }
+    if (repo) try { const r = await fetch('https://api.github.com/repos/' + repo + '/contents/' + encodeURIComponent(SAVED_DIR)); if (r.ok) names = (await r.json()).filter(x => x.type === 'file').map(x => x.name); } catch {}
+  }
+  // 3) server có liệt kê thư mục (vd: python -m http.server)
+  if (!names) try {
+    const r = await fetch(segEnc(SAVED_DIR) + '/');
+    if (r.ok && /html/.test(r.headers.get('content-type') || '')) { const d = new DOMParser().parseFromString(await r.text(), 'text/html'); names = [...d.querySelectorAll('a')].map(a => decodeURIComponent((a.getAttribute('href') || '').split('/').pop())); }
+  } catch {}
+  names = (names || []).filter(n => VID_EXT.test(n));
+  if (!names.length) return false;
+  savedFiles = names.map(n => ({ name: n, url: segEnc(SAVED_DIR) + '/' + encodeURIComponent(n) })).sort(byName); renderSaved();
+  $('savedName').textContent = SAVED_DIR + ' · ' + savedFiles.length + ' file';
+  return true;
+}
+(async () => {
+  if (await loadDefaultSaved()) return;
+  try {
+    const d = await idb.getMeta('savedDir'); if (!d) return; savedDir = d;
+    if ((await d.queryPermission({ mode: 'read' })) === 'granted') await showSavedDir(d);
+    else $('savedName').textContent = d.name + ' · bấm để mở lại';
+  } catch {}
+})();
 
 /* ---- khởi động ---- */
 $('fPreset').value = 'Rạp phim';
