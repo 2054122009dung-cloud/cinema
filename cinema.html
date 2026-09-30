@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home Cinema 5D</title>
+<style>
+  :root { --bg:#0b0b0f; --panel:#15151c; --line:#262633; --text:#e9e6df; --muted:#8b8a96; --gold:#d4a24c; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:Georgia,'Times New Roman',serif; transition:background .6s; }
+  h1,h2 { font-weight:normal; letter-spacing:.08em; text-transform:uppercase; }
+  h1 { font-size:1.25rem; color:var(--gold); margin:0; }
+  h2 { font-size:.82rem; color:var(--muted); margin:0 0 12px; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+  main { display:grid; grid-template-columns:330px 1fr; gap:18px; padding:18px 24px; max-width:1500px; margin:auto; }
+  @media (max-width:950px){ main{ grid-template-columns:1fr; } }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  label { display:block; font:12px system-ui,sans-serif; color:var(--muted); margin:10px 0 4px; }
+  input,select,textarea { width:100%; background:#0e0e14; border:1px solid var(--line); color:var(--text); padding:9px; border-radius:6px; font:14px system-ui,sans-serif; }
+  input[type=range] { padding:0; background:none; border:0; accent-color:var(--gold); }
+  input[type=checkbox] { width:auto; accent-color:var(--gold); }
+  button { background:var(--gold); color:#1a1305; border:0; border-radius:6px; padding:9px 14px; font:600 13px system-ui,sans-serif; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--text); border:1px solid var(--line); }
+  button.danger { background:transparent; color:#e0616c; border:1px solid #4a2228; }
+  button:hover { filter:brightness(1.12); }
+  .row { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; align-items:center; }
+  .badge { display:inline-block; font:11px system-ui,sans-serif; padding:2px 8px; border-radius:99px; border:1px solid var(--line); color:var(--muted); }
+  .hint { font:12px/1.5 system-ui,sans-serif; color:#c9a15a; background:#1d1810; border:1px solid #3b2f17; border-radius:6px; padding:8px 10px; margin-bottom:10px; }
+  .dimmable { transition:opacity .6s; }
+  body.dim { background:#000; } body.dim .dimmable { opacity:.12; }
+
+  /* ---------- library ---------- */
+  .list { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:12px; margin-top:12px; }
+  .card { background:#0e0e14; border:1px solid var(--line); border-radius:8px; overflow:hidden; display:flex; flex-direction:column; }
+  .card .poster { position:relative; aspect-ratio:16/9; background:#000 center/cover; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:38px; color:#444; }
+  .card .prog { position:absolute; left:0; bottom:0; height:3px; background:var(--gold); }
+  .card .body { padding:10px; font:13px system-ui,sans-serif; flex:1; }
+  .card .t { font-weight:600; margin-bottom:4px; }
+  .card .m { color:var(--muted); font-size:12px; }
+  .card .actions { display:flex; gap:6px; padding:0 10px 10px; }
+  .card .actions button { padding:6px 10px; font-size:12px; }
+  .empty { color:var(--muted); font:14px system-ui,sans-serif; padding:18px 0; }
+
+  /* ---------- theater ---------- */
+  #theater { display:none; margin-bottom:16px; }
+  #theater.on { display:block; }
+  #room { position:relative; background:radial-gradient(ellipse at 50% 20%,#1b1b26 0%,#050507 72%); border-radius:10px; padding:34px 5% 84px; overflow:hidden; perspective:1400px; --h:74vh; }
+  #room::after { content:""; position:absolute; left:0; right:0; bottom:0; height:70px; pointer-events:none;
+    background:radial-gradient(circle at 50% 100%,#000 0 18px,transparent 19px) 0 0/70px 46px repeat-x, linear-gradient(to top,#000 40%,transparent); }
+  #room:fullscreen { --h:100vh; padding:0; border-radius:0; display:flex; align-items:center; justify-content:center; background:#000; }
+  #room:fullscreen::after { display:none; }
+  #screenWrap { position:relative; width:100%; will-change:transform; }
+  #room:fullscreen #screenWrap { width:100%; }
+  #amb { position:absolute; left:-7%; top:-10%; width:114%; height:120%; display:none; filter:blur(14px) saturate(1.7); opacity:.3; pointer-events:none; }
+  #screen { position:relative; width:min(100%,calc(var(--h) * var(--ar,1.7778))); aspect-ratio:var(--ar,1.7778); margin:0 auto; background:#000; overflow:hidden; border-radius:3px; container-type:inline-size; cursor:pointer; }
+  #pic { position:absolute; inset:0; }
+  #pic video,#pic canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:#000; }
+  #pic canvas { display:none; }
+  /* hạt phim: lớp nhỏ (124% màn hình thay vì 200%), pha trộn thường (không blend-mode), chỉ tồn tại khi > 0 */
+  #grain { position:absolute; inset:-12%; display:none; pointer-events:none; opacity:0; z-index:3; image-rendering:pixelated; will-change:transform; animation:grain .67s steps(1,end) infinite; }
+  @keyframes grain { 0%{transform:translate(0,0)} 12.5%{transform:translate(-5%,3%)} 25%{transform:translate(4%,-4%)} 37.5%{transform:translate(-3%,-5%)} 50%{transform:translate(5%,4%)} 62.5%{transform:translate(-5%,-2%)} 75%{transform:translate(2%,5%)} 87.5%{transform:translate(-2%,-3%)} 100%{transform:translate(0,0)} }
+  #tint { position:absolute; inset:0; pointer-events:none; z-index:2; display:none; opacity:0; }
+  #vig { position:absolute; inset:0; pointer-events:none; z-index:3; display:none; background:radial-gradient(ellipse at center,transparent 52%,rgba(0,0,0,.9) 100%); opacity:.35; }
+  #flash { position:absolute; inset:0; pointer-events:none; z-index:4; opacity:0; visibility:hidden; background:radial-gradient(circle at 50% 40%,rgba(190,215,255,.95),rgba(120,150,255,0) 72%); }
+  #subs { position:absolute; left:5%; right:5%; bottom:calc(var(--subpos,10) * 1%); text-align:center; z-index:6; pointer-events:none; white-space:pre-line;
+    font:600 calc(var(--subsize,100) * .022cqw)/1.3 system-ui,sans-serif; color:#fff; text-shadow:0 0 4px #000,0 0 8px #000,1px 1px 2px #000; }
+  .curtain { position:absolute; top:0; bottom:0; width:50%; background:repeating-linear-gradient(90deg,#5a0f18 0 14px,#7c1420 14px 28px); z-index:20; transition:transform 1.8s ease; }
+  .curtain.l { left:0; } .curtain.r { right:0; }
+  #theater.open .curtain.l { transform:translateX(-101%); } #theater.open .curtain.r { transform:translateX(101%); }
+  #bar { position:absolute; left:0; right:0; bottom:0; padding:24px 12px 8px; background:linear-gradient(transparent,rgba(0,0,0,.85)); display:flex; align-items:center; gap:10px; color:#fff; font:12px system-ui,sans-serif; z-index:8; transition:opacity .3s; }
+  #bar button { background:none; color:#fff; border:0; padding:4px 6px; font-size:16px; }
+  #bar select { width:auto; padding:3px; font-size:12px; }
+  #bar input[type=range] { flex:1; }
+  #screen.idle #bar { opacity:0; } #screen.idle { cursor:none; }
+  #perf { font:12px/1.5 system-ui,sans-serif; border-radius:6px; padding:8px 10px; margin-bottom:10px; background:#101a12; border:1px solid #23412a; color:#8fd19e; }
+  #perf.warn { background:#22150f; border-color:#5a2f1a; color:#f0a070; }
+  #nowTitle { font:13px system-ui,sans-serif; color:var(--muted); margin:0 0 8px; text-align:center; }
+
+  /* ---------- settings ---------- */
+  .tabs { display:flex; gap:6px; flex-wrap:wrap; margin:12px 0; }
+  .tabs button { background:transparent; color:var(--muted); border:1px solid var(--line); }
+  .tabs button.on { background:var(--gold); color:#1a1305; border-color:var(--gold); }
+  .tabpane { display:none; } .tabpane.on { display:block; }
+  .grid2 { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:4px 22px; }
+  .ctl label { margin:8px 0 2px; } .ctl label b { color:var(--text); font-weight:600; }
+  .chk { display:flex !important; gap:8px; align-items:center; margin-top:16px !important; }
+  .adv{display:none} #theater.showadv .adv{display:block}
+  .inl{display:flex;gap:8px;align-items:center;margin:0;font:12px system-ui,sans-serif;color:var(--muted)} .inl select{width:auto} .inl b{color:var(--text);min-width:34px}
+  #spec { width:100%; height:60px; background:#0e0e14; border:1px solid var(--line); border-radius:6px; margin-bottom:8px; }
+  #toast { position:fixed; top:18px; left:50%; transform:translateX(-50%); background:#000d; border:1px solid var(--line); color:#fff; padding:10px 16px; border-radius:8px; font:13px system-ui,sans-serif; z-index:99; opacity:0; pointer-events:none; transition:opacity .3s; max-width:90vw; }
+  #toast.on { opacity:1; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="sharp" color-interpolation-filters="sRGB"><feConvolveMatrix id="sharpM" order="3" preserveAlpha="true" kernelMatrix="0 0 0 0 1 0 0 0 0"/></filter>
+</svg>
+
+<header class="dimmable">
+  <h1>🎬 Home Cinema 5D</h1>
+  <span class="badge" id="status">chưa phát</span>
+</header>
+
+<main>
+  <!-- ===== Create / Update ===== -->
+  <aside class="panel dimmable">
+    <h2 id="formTitle">Thêm phim vào thư viện</h2>
+    <label>Tên phim</label><input id="fTitle" placeholder="Blade Runner 2049">
+    <label>File phim đã tải về</label>
+    <div class="row" style="margin-top:0"><button class="ghost" id="btnPick">📂 Chọn file phim</button><span class="badge" id="pickedName">chưa chọn</span></div>
+    <label>…hoặc link video trực tiếp (.mp4/.webm, server phải cho CORS)</label><input id="fUrl" placeholder="https://.../movie.mp4">
+    <label>Ghi chú</label><textarea id="fNotes" rows="2" placeholder="Bản 3D SBS, phụ đề Việt…"></textarea>
+    <label>Đánh giá</label>
+    <select id="fRating"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
+    <label>Cấu hình âm thanh &amp; hình ảnh mặc định</label><select id="fPreset"></select>
+    <div class="row"><button id="btnSave">Lưu</button><button class="ghost" id="btnCancel" style="display:none">Huỷ sửa</button></div>
+    <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
+    <button class="ghost" id="btnQuick">▶ Xem nhanh 1 file (không lưu)</button>
+    <input type="file" id="fFile" accept="video/*,audio/*,.mkv,.flac" style="display:none">
+    <div class="hint" style="margin-top:12px">Nên dùng <b>mp4 (H.264 + AAC)</b>. File có tiếng AC3/DTS thường bị câm trên trình duyệt: đổi bằng <code>ffmpeg -i in.mkv -c:v copy -c:a aac -b:a 384k out.mp4</code> (giữ nguyên 5.1).</div>
+  </aside>
+
+  <section>
+    <!-- ===== Theater ===== -->
+    <div id="theater">
+      <div id="nowTitle"></div>
+      <div id="room">
+        <div id="screenWrap">
+          <canvas id="amb" width="48" height="27"></canvas>
+          <div id="screen">
+            <div id="pic"><canvas id="cv3d"></canvas></div>
+            <div id="tint"></div><div id="grain"></div><div id="vig"></div><div id="flash"></div>
+            <div id="subs"></div>
+            <div id="bar">
+              <button id="bPlay" title="Space">▶</button>
+              <span id="tCur">0:00</span>
+              <input type="range" id="seek" min="0" max="1000" value="0">
+              <span id="tDur">0:00</span>
+              <select id="spd" title="Tốc độ"><option>0.75</option><option selected>1</option><option>1.25</option><option>1.5</option><option>2</option></select>
+              <button id="bCC" title="Phụ đề (C)">CC</button>
+              <button id="bFS" title="Toàn màn hình (F)">⛶</button>
+            </div>
+            <div class="curtain l"></div><div class="curtain r"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:10px">
+        <div class="row" style="margin-top:0">
+          <select id="cPreset" style="width:auto;min-width:200px"></select>
+          <button id="bSaveMovie">💾 Lưu cho phim này</button>
+          <button class="ghost" id="bPulse">💥 Thử 5D</button>
+          <button class="ghost" id="bLights">Tắt đèn</button>
+          <button class="ghost" id="bClose">Đóng rạp</button>
+          <span class="badge">Space · ←/→ tua · ↑/↓ âm lượng · F · M · C · L</span>
+        </div>
+        <div class="row"><label class="inl">Cấu hình máy <select id="cTier"></select></label><label class="inl">Cường độ preset <b id="vInt"></b><input type="range" id="cInt" min="0" max="100" step="5" style="width:150px"></label><label class="inl"><input type="checkbox" id="cAdv"> Nâng cao</label></div>
+        <div class="tabs" id="tabs">
+          <button data-t="audio" class="on">🔊 Âm thanh</button>
+          <button data-t="video">🎞️ Hình ảnh &amp; 3D</button>
+          <button data-t="fx">💥 Hiệu ứng 5D</button>
+          <button data-t="subs">💬 Phụ đề</button>
+        </div>
+        <div class="tabpane on" id="tab-audio">
+          <div class="hint">Surround ảo chỉ đúng với <b>tai nghe</b>; loa ngoài chọn "Rạp rộng". Nghe nhạc: chọn preset <b>Nhạc</b>. Bật "Nâng cao" để chỉnh EQ, vang, loa vòm.</div>
+          <canvas id="spec" width="600" height="60"></canvas><div class="grid2" id="g-audio"></div>
+        </div>
+        <div class="tabpane" id="tab-video">
+          <div class="hint"><b>Tăng dần:</b> chọn đúng <b>Cấu hình máy</b>, rồi tăng <b>từng thanh một</b> và xem ô "Khung rớt": &gt; 0 là máy quá tải, lùi lại một chút. Cấu hình càng khỏe, giới hạn tối đa của các thanh nặng (Làm nét, Ambilight, Hạt phim, 3D) càng cao. Anime: làm nét 10–20% + bão hoà cao là đủ đẹp. 3D chỉ dành cho phim SBS/OU + kính đỏ–lam.</div>
+          <div id="perf">Đang đo…</div>
+          <div class="grid2" id="g-video"></div>
+        </div>
+        <div class="tabpane" id="tab-fx">
+          <div class="hint">5D mô phỏng bằng phần mềm: màn hình rung theo tiếng bass, chớp sáng khi có tiếng nổ, rung tay cầm game / điện thoại (nếu có). Không thay thế được ghế 5D thật.</div>
+          <div class="grid2" id="g-fx"></div>
+        </div>
+        <div class="tabpane" id="tab-subs">
+          <div class="row" style="margin-top:0"><button class="ghost" id="bSubs">📄 Nạp phụ đề (.srt / .vtt)</button><span class="badge" id="subName">chưa có</span><button class="danger" id="bSubClear">Xoá</button></div>
+          <input type="file" id="fSubs" accept=".srt,.vtt" style="display:none">
+          <div class="grid2" id="g-subs"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Read ===== -->
+    <div class="panel dimmable">
+      <h2>Thư viện <span id="count" class="badge"></span></h2>
+      <input id="search" placeholder="Tìm theo tên hoặc ghi chú…">
+      <div class="list" id="list"></div>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const esc = s => (s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtT = s => { s = Math.max(0, s | 0); const h = (s / 3600) | 0, m = ((s % 3600) / 60) | 0, ss = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(ss).padStart(2, '0'); };
+let toastT; function toast(msg, ms = 3500) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), ms); }
+
+/* ================= IndexedDB (lưu thư viện + quyền truy cập file) ================= */
+const idb = {
+  open() { return new Promise((res, rej) => { const r = indexedDB.open('homecinema5d', 1); r.onupgradeneeded = () => r.result.createObjectStore('movies', { keyPath: 'id' }); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
+  async tx(mode, fn) { const db = await (this._db || (this._db = this.open())); return new Promise((res, rej) => { const t = db.transaction('movies', mode); const rq = fn(t.objectStore('movies')); t.oncomplete = () => res(rq && rq.result); t.onerror = () => rej(t.error); }); },
+  all() { return this.tx('readonly', s => s.getAll()); },
+  put(m) { return this.tx('readwrite', s => s.put(m)); },
+  del(id) { return this.tx('readwrite', s => s.delete(id)); }
+};
+
+/* ================= Cài đặt & preset ================= */
+const D = {
+  mode: 'wide', gain: 1.5, bass: 6, dialog: 3, width: 130, surround: 70, sub: 50, orbit: 0, wet: 22, room: 2.4, pre: 20, night: 0, delay: 0,
+  eq0: 2, eq1: 0, eq2: 0, eq3: 1, eq4: 2,
+  bright: 100, contrast: 108, sat: 112, tone: 8, sharp: 0, grain: 0, grainSize: 100, grainFps: 12, vig: 35,
+  amb: 0, ambBlur: 14, ambFps: 12, ambRes: 32, aspect: 'auto', d3: 'off', d3Res: 720, swapEyes: false, parallax: 40,
+  shake: 35, flash: 30, rumble: 50,
+  subOff: 0, subSize: 100, subPos: 10
+};
+const PRESETS_MOVIE = {
+  'Rạp phim': {},
+  'IMAX': { gain: 2, bass: 10, width: 150, wet: 15, room: 1.8, contrast: 115, sat: 118, vig: 45, shake: 60, flash: 40, rumble: 60 },
+  'Surround tai nghe': { mode: 'hrtf', gain: 1.7, surround: 90, sub: 60, wet: 18, orbit: 0 },
+  'Phim hành động 5D': { mode: 'hrtf', gain: 2, bass: 12, surround: 90, sub: 80, orbit: 25, contrast: 118, sat: 120, vig: 45, shake: 80, flash: 60, rumble: 80 },
+  'Phim kinh dị': { mode: 'hrtf', gain: 1.6, wet: 40, room: 4.5, orbit: 20, bright: 92, contrast: 122, sat: 90, tone: -18, grain: 28, vig: 62, shake: 30, flash: 20 },
+  'Đêm khuya': { gain: 1.2, bass: 3, dialog: 6, wet: 8, night: 70, shake: 0, flash: 0, rumble: 0 },
+  'Gốc (không hiệu ứng)': { mode: 'stereo', gain: 1, bass: 0, dialog: 0, width: 100, wet: 0, eq0: 0, eq1: 0, eq2: 0, eq3: 0, eq4: 0, bright: 100, contrast: 100, sat: 100, tone: 0, sharp: 0, grain: 0, vig: 0, amb: 0, parallax: 0, shake: 0, flash: 0, rumble: 0 }
+};
+const PRESETS_MUSIC = {
+  'Nhạc – Cân bằng': { mode: 'stereo', gain: 1.2, bass: 4, dialog: 0, wet: 6, room: 1.5, eq0: 2, eq1: 0, eq2: 0, eq3: 1, eq4: 2, contrast: 104, sat: 108, vig: 0, parallax: 10, shake: 0, flash: 0, rumble: 0 },
+  'Nhạc – Giọng hát': { mode: 'stereo', gain: 1.2, bass: 3, dialog: 6, wet: 10, room: 1.6, eq2: 2, eq3: 3, eq4: 2, vig: 0, parallax: 10, shake: 0, flash: 0, rumble: 0 },
+  'Nhạc – EDM / Bass': { mode: 'wide', gain: 1.5, bass: 12, dialog: 0, width: 150, wet: 12, room: 1.4, eq0: 6, eq1: 2, eq2: -1, eq3: 1, eq4: 4, contrast: 112, sat: 125, vig: 40, shake: 55, flash: 40, rumble: 35 },
+  'Nhạc – Acoustic / Hoà tấu': { mode: 'wide', gain: 1.3, bass: 1, dialog: 0, width: 115, wet: 26, room: 2.8, pre: 25, eq0: 0, eq1: 0, eq2: 1, eq3: 2, eq4: 3, vig: 20, shake: 0, flash: 0, rumble: 0 },
+  'Nhạc – Live / Concert': { mode: 'wide', gain: 1.6, bass: 8, dialog: 2, width: 165, wet: 32, room: 3.5, pre: 30, eq0: 3, eq3: 2, eq4: 3, contrast: 110, sat: 118, vig: 30, shake: 35, flash: 35, rumble: 30 }
+};
+const PRESETS_ANIME = {
+  'Anime – Màu tươi': { mode: 'wide', gain: 1.4, bass: 4, dialog: 4, wet: 8, sat: 130, contrast: 112, bright: 104, tone: 4, vig: 0, parallax: 30, shake: 0, flash: 0, rumble: 0 },
+  'Anime – Cảnh tĩnh / đời thường': { mode: 'wide', gain: 1.3, bass: 2, dialog: 4, wet: 6, night: 20, sat: 115, contrast: 104, bright: 103, tone: 8, vig: 0, shake: 0, flash: 0, rumble: 0 },
+  'Anime – Điện ảnh': { mode: 'wide', gain: 1.6, bass: 8, dialog: 3, wet: 18, sat: 118, contrast: 115, tone: 6, vig: 30, shake: 40, flash: 30, rumble: 30 },
+  'Anime – Hành động / Battle': { mode: 'wide', gain: 1.8, bass: 10, dialog: 3, width: 140, wet: 12, sat: 135, contrast: 118, vig: 20, shake: 70, flash: 55, rumble: 60 }
+};
+const PRESET_GROUPS = { 'Phim': PRESETS_MOVIE, 'Nhạc': PRESETS_MUSIC, 'Anime': PRESETS_ANIME };
+const PRESETS = Object.assign({}, PRESETS_MOVIE, PRESETS_MUSIC, PRESETS_ANIME);
+const FIXED = new Set(['Gốc (không hiệu ứng)']);
+const HEAVY = ['sharp', 'amb', 'ambBlur', 'ambFps', 'ambRes', 'grain', 'grainSize', 'grainFps', 'd3', 'swapEyes', 'd3Res', 'aspect'];
+const LS = { get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+let TIER = Math.min(3, Math.max(0, +LS.get('hc_tier', 1) || 0)), INT = Math.min(100, Math.max(0, +LS.get('hc_int', 50)));
+const TIERS = ['Yếu (máy cũ / laptop mỏng)', 'Trung bình', 'Khỏe (GPU rời)', 'Rất khỏe (mở khoá tối đa)'];
+const capOf = it => it.cap ? it.cap[TIER] : it.max;
+/* preset áp theo "cường độ": 0% = mặc định rạp, 100% = đủ preset. Các thanh nặng do bạn tự chỉnh được giữ nguyên khi đổi preset. */
+function presetState(name) {
+  const P = PRESETS[name] || {}, k = FIXED.has(name) ? 1 : INT / 100, o = { ...D };
+  for (const key in P) { const v = P[key]; o[key] = (typeof v === 'number' && typeof D[key] === 'number') ? Math.round((D[key] + (v - D[key]) * k) * 100) / 100 : (k > 0 ? v : D[key]); }
+  return o;
+}
+let S = { ...D };
+[$('fPreset'), $('cPreset')].forEach(sel => Object.entries(PRESET_GROUPS).forEach(([g, ps]) => { const og = document.createElement('optgroup'); og.label = g; Object.keys(ps).forEach(k => og.appendChild(new Option(k, k))); sel.appendChild(og); }));
+
+const SPEC = {
+  audio: [
+    { k: 'mode', t: 'Không gian âm thanh', type: 'select', opts: [['stereo', 'Stereo gốc'], ['wide', 'Rạp rộng (mở sân khấu)'], ['hrtf', 'Surround 7.1 ảo (tai nghe)']] },
+    { k: 'gain', t: 'Âm lượng tổng', min: .2, max: 4, step: .05, f: v => (+v).toFixed(2) + '×' },
+    { k: 'bass', t: 'Bass', min: 0, max: 18, u: ' dB' },
+    { k: 'dialog', t: 'Rõ lời thoại', min: 0, max: 10, step: .5, u: ' dB' },
+    { adv: 1, k: 'width', t: 'Độ rộng sân khấu (chế độ Rạp rộng)', min: 50, max: 200, step: 5, u: '%' },
+    { adv: 1, k: 'surround', t: 'Loa vòm sau (Surround ảo)', min: 0, max: 150, step: 5, u: '%' },
+    { adv: 1, k: 'sub', t: 'Siêu trầm LFE (Surround ảo)', min: 0, max: 100, u: '%' },
+    { adv: 1, k: 'orbit', t: 'Âm thanh xoay 5D (Surround ảo)', min: 0, max: 100, u: '%' },
+    { k: 'wet', t: 'Echo / vang rạp', min: 0, max: 80, u: '%' },
+    { adv: 1, k: 'room', t: 'Cỡ phòng', min: .5, max: 6, step: .1, u: ' s' },
+    { adv: 1, k: 'pre', t: 'Trễ vang', min: 0, max: 80, u: ' ms' },
+    { k: 'night', t: 'Chế độ đêm (nén tiếng nổ)', min: 0, max: 100, u: '%' },
+    { k: 'delay', t: 'Trễ âm thanh (chỉnh khớp môi)', min: 0, max: 500, step: 5, u: ' ms' },
+    { adv: 1, k: 'eq0', t: 'EQ 60 Hz', min: -8, max: 10, u: ' dB' }, { adv: 1, k: 'eq1', t: 'EQ 230 Hz', min: -8, max: 10, u: ' dB' },
+    { adv: 1, k: 'eq2', t: 'EQ 910 Hz', min: -8, max: 10, u: ' dB' }, { adv: 1, k: 'eq3', t: 'EQ 3.6 kHz', min: -8, max: 10, u: ' dB' },
+    { adv: 1, k: 'eq4', t: 'EQ 12 kHz', min: -8, max: 10, u: ' dB' }
+  ],
+  video: [
+    { k: 'd3', t: 'Chế độ 3D', type: 'select', opts: [['off', 'Tắt (phim 2D)'], ['sbs-ana', 'SBS → 3D kính đỏ–lam'], ['ou-ana', 'OU → 3D kính đỏ–lam'], ['sbs2d', 'SBS → chỉ 2D (mắt trái)'], ['ou2d', 'OU → chỉ 2D (mắt trên)']] },
+    { adv: 1, k: 'swapEyes', t: 'Đảo mắt trái/phải (nếu 3D bị ngược)', type: 'check' },
+    { adv: 1, k: 'd3Res', t: '3D: độ phân giải (chiều cao, nặng khi cao)', min: 360, max: 1080, cap: [480, 720, 1080, 2160], step: 60, u: ' p' },
+    { k: 'aspect', t: 'Khung hình', type: 'select', opts: [['auto', 'Gốc'], ['2.39', '2.39:1 (cắt, chuẩn điện ảnh)'], ['1.85', '1.85:1 (cắt)'], ['16:9', '16:9 (cắt)']] },
+    { k: 'bright', t: 'Độ sáng', min: 60, max: 140, u: '%' }, { k: 'contrast', t: 'Tương phản', min: 60, max: 160, u: '%' },
+    { k: 'sat', t: 'Bão hoà màu', min: 0, max: 200, u: '%' },
+    { k: 'tone', t: 'Tông màu (− lạnh / + ấm)', min: -50, max: 50 },
+    { k: 'sharp', t: 'Làm nét (nặng)', min: 0, max: 100, cap: [15, 40, 80, 150], step: 5, u: '%' },
+    { k: 'grain', t: 'Hạt phim: độ đậm (0 = tắt hẳn)', min: 0, max: 100, u: '%' },
+    { adv: 1, k: 'grainSize', t: 'Hạt phim: cỡ hạt', min: 50, max: 300, step: 10, u: '%' },
+    { adv: 1, k: 'grainFps', t: 'Hạt phim: tốc độ nhấp nháy (cao = nặng hơn)', min: 2, max: 30, cap: [6, 12, 24, 60], u: ' /giây' },
+    { k: 'vig', t: 'Tối viền (vignette)', min: 0, max: 100, u: '%' },
+    { k: 'amb', t: 'Ambilight: độ sáng (0 = tắt hẳn)', min: 0, max: 100, u: '%' },
+    { adv: 1, k: 'ambBlur', t: 'Ambilight: độ mờ (nặng GPU khi cao)', min: 0, max: 100, cap: [8, 20, 50, 120], step: 2, u: ' px' },
+    { adv: 1, k: 'ambFps', t: 'Ambilight: tần số cập nhật', min: 4, max: 30, cap: [6, 12, 24, 60], u: ' /giây' },
+    { adv: 1, k: 'ambRes', t: 'Ambilight: độ phân giải màu', min: 16, max: 96, cap: [24, 32, 64, 192], step: 8, u: ' px' },
+    { k: 'parallax', t: 'Chiều sâu rạp (nghiêng theo chuột)', min: 0, max: 100, u: '%' }
+  ],
+  fx: [
+    { k: 'shake', t: 'Rung màn hình theo bass', min: 0, max: 100, u: '%' },
+    { k: 'flash', t: 'Chớp sáng khi có tiếng nổ / sấm', min: 0, max: 100, u: '%' },
+    { k: 'rumble', t: 'Rung tay cầm / điện thoại', min: 0, max: 100, u: '%' }
+  ],
+  subs: [
+    { k: 'subOff', t: 'Lệch phụ đề (+ = hiện trễ hơn)', min: -30, max: 30, step: .1, u: ' s' },
+    { k: 'subSize', t: 'Cỡ chữ', min: 50, max: 200, u: '%' },
+    { k: 'subPos', t: 'Vị trí từ đáy', min: 2, max: 40, u: '%' }
+  ]
+};
+const showVal = it => { const b = $('v_' + it.k); if (b) b.textContent = it.f ? it.f(S[it.k]) : S[it.k] + (it.u || ''); };
+function buildPanels() {
+  for (const [grp, items] of Object.entries(SPEC)) {
+    const box = $('g-' + grp);
+    items.forEach(it => {
+      const w = document.createElement('div'); w.className = 'ctl' + (it.adv ? ' adv' : ''); const id = 'c_' + it.k;
+      if (it.type === 'select') w.innerHTML = `<label>${it.t}</label><select id="${id}">${it.opts.map(o => `<option value="${o[0]}">${o[1]}</option>`).join('')}</select>`;
+      else if (it.type === 'check') w.innerHTML = `<label class="chk"><input type="checkbox" id="${id}"> ${it.t}</label>`;
+      else w.innerHTML = `<label>${it.t}: <b id="v_${it.k}"></b></label><input type="range" id="${id}" min="${it.min}" max="${capOf(it)}" step="${it.step || 1}">`;
+      box.appendChild(w);
+      const el = w.querySelector('#' + id);
+      el.addEventListener('input', () => { S[it.k] = it.type === 'select' ? el.value : it.type === 'check' ? el.checked : +el.value; showVal(it); applyAll(it.k); });
+    });
+  }
+}
+function clampS() { for (const items of Object.values(SPEC)) items.forEach(it => { if (it.cap && S[it.k] > capOf(it)) S[it.k] = capOf(it); }); }
+function syncUI() {
+  clampS();
+  for (const items of Object.values(SPEC)) items.forEach(it => {
+    const el = $('c_' + it.k); if (it.type === 'check') el.checked = !!S[it.k]; else el.value = S[it.k]; showVal(it);
+  });
+}
+function applyPreset(name) { const n = presetState(name), P = PRESETS[name] || {}; if (!FIXED.has(name)) HEAVY.forEach(k => { if (!(k in P)) n[k] = S[k]; }); S = n; syncUI(); applyAll(); }
+
+/* ================= Audio engine (Web Audio) ================= */
+let ac, A = null, muted = false, irT;
+const g = (v = 1) => { const n = ac.createGain(); n.gain.value = v; return n; };
+const biq = (type, f, q = 1) => { const n = ac.createBiquadFilter(); n.type = type; n.frequency.value = f; n.Q.value = q; return n; };
+function setPan(p, az, r = 2) { const a = az * Math.PI / 180, x = Math.sin(a) * r, z = -Math.cos(a) * r; if (p.positionX) { p.positionX.value = x; p.positionY.value = 0; p.positionZ.value = z; } else p.setPosition(x, 0, z); }
+function mkPan(az) { const p = ac.createPanner(); p.panningModel = 'HRTF'; p.distanceModel = 'inverse'; p.refDistance = 1; p.rolloffFactor = 0; setPan(p, az); return p; }
+function makeIR(sec) {
+  const rate = ac.sampleRate, len = Math.floor(rate * sec), buf = ac.createBuffer(2, len, rate);
+  for (let c = 0; c < 2; c++) { const d = buf.getChannelData(c); let y = 0; for (let i = 0; i < len; i++) { const n = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3); y = y * .55 + n * .45; d[i] = y; } }
+  return buf;
+}
+function buildAudio(video) {
+  ac = ac || new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });
+  const a = {}; const src = ac.createMediaElementSource(video); a.src = src;
+  a.in = g(); a.in.channelCount = 2; a.in.channelCountMode = 'explicit'; a.in.channelInterpretation = 'speakers'; // 5.1 → stereo đúng chuẩn
+  a.delay = ac.createDelay(1);
+  src.connect(a.in); a.in.connect(a.delay);
+  a.bass = biq('lowshelf', 90);
+  a.eq = [60, 230, 910, 3600, 12000].map(f => biq('peaking', f, 1));
+  a.dialog = biq('peaking', 2500, 1.1);
+  [a.delay, a.bass, ...a.eq, a.dialog].reduce((p, n) => (p.connect(n), n));
+  a.split = ac.createChannelSplitter(2); a.dialog.connect(a.split);
+  a.spatial = g();
+
+  // --- đường 1: stereo gốc
+  a.pStereo = g(0); a.dialog.connect(a.pStereo); a.pStereo.connect(a.spatial);
+
+  // --- Mid/Side dùng cho 2 đường còn lại
+  const mL = g(.5), mR = g(.5), sL = g(.5), sR = g(-.5);
+  a.split.connect(mL, 0); a.split.connect(mR, 1); a.split.connect(sL, 0); a.split.connect(sR, 1);
+  a.mid = g(); a.side = g(); mL.connect(a.mid); mR.connect(a.mid); sL.connect(a.side); sR.connect(a.side);
+
+  // --- đường 2: rạp rộng (mở rộng phần Side)
+  a.width = g(1.3); a.side.connect(a.width);
+  const inv = g(-1); a.width.connect(inv);
+  const wl = g(), wr = g(); a.mid.connect(wl); a.width.connect(wl); a.mid.connect(wr); inv.connect(wr);
+  const mergeW = ac.createChannelMerger(2); wl.connect(mergeW, 0, 0); wr.connect(mergeW, 0, 1);
+  a.pWide = g(0); mergeW.connect(a.pWide); a.pWide.connect(a.spatial);
+
+  // --- đường 3: surround 7.1 ảo bằng HRTF
+  a.pFL = mkPan(-30); a.pFR = mkPan(30); a.pC = mkPan(0); a.pSL = mkPan(-110); a.pSR = mkPan(110);
+  a.split.connect(a.pFL, 0); a.split.connect(a.pFR, 1);
+  const cg = g(.9); a.mid.connect(cg); cg.connect(a.pC);
+  const dl = ac.createDelay(.1), dr = ac.createDelay(.1); dl.delayTime.value = .012; dr.delayTime.value = .019;
+  const lpL = biq('lowpass', 7000, .7), lpR = biq('lowpass', 7000, .7), invS = g(-1);
+  a.surL = g(1); a.surR = g(1);
+  a.side.connect(dl); dl.connect(lpL); lpL.connect(a.surL); a.surL.connect(a.pSL);
+  a.side.connect(invS); invS.connect(dr); dr.connect(lpR); lpR.connect(a.surR); a.surR.connect(a.pSR);
+  const lfeLp = biq('lowpass', 120, .7); a.lfe = g(.6); a.mid.connect(lfeLp); lfeLp.connect(a.lfe);
+  a.pHRTF = g(0);
+  [a.pFL, a.pFR, a.pC, a.pSL, a.pSR, a.lfe].forEach(n => n.connect(a.pHRTF)); a.pHRTF.connect(a.spatial);
+
+  // --- vang rạp
+  a.dry = g(); a.wet = g(.2); a.pre = ac.createDelay(.2); a.conv = ac.createConvolver(); a.conv.buffer = makeIR(S.room); a.roomV = S.room;
+  a.spatial.connect(a.dry); a.spatial.connect(a.pre); a.pre.connect(a.conv); a.conv.connect(a.wet);
+  a.mix = g(); a.dry.connect(a.mix); a.wet.connect(a.mix);
+  // --- chế độ đêm + master + limiter chống vỡ tiếng
+  a.night = ac.createDynamicsCompressor(); a.night.knee.value = 12; a.night.attack.value = .01; a.night.release.value = .25;
+  a.makeup = g(); a.master = g(1.5);
+  a.mix.connect(a.night); a.night.connect(a.makeup); a.makeup.connect(a.master);
+  a.limit = ac.createDynamicsCompressor(); a.limit.threshold.value = -2; a.limit.knee.value = 0; a.limit.ratio.value = 20; a.limit.attack.value = .002; a.limit.release.value = .08;
+  a.master.connect(a.limit);
+  a.an = ac.createAnalyser(); a.an.fftSize = 1024; a.an.smoothingTimeConstant = .55;
+  a.limit.connect(a.an); a.limit.connect(ac.destination);
+  A = a; applyAudio('room');
+}
+function applyAudio(key) {
+  if (!A) return; const t = ac.currentTime, s = (p, v) => p.setTargetAtTime(v, t, .04);
+  s(A.delay.delayTime, S.delay / 1000); s(A.bass.gain, S.bass); A.eq.forEach((f, i) => s(f.gain, S['eq' + i])); s(A.dialog.gain, S.dialog);
+  s(A.width.gain, S.width / 100);
+  s(A.pStereo.gain, S.mode === 'stereo' ? 1 : 0); s(A.pWide.gain, S.mode === 'wide' ? 1 : 0); s(A.pHRTF.gain, S.mode === 'hrtf' ? 1.7 : 0);
+  s(A.surL.gain, S.surround / 100 * 2); s(A.surR.gain, S.surround / 100 * 2); s(A.lfe.gain, S.sub / 100 * 1.5);
+  s(A.wet.gain, S.wet / 100 * 1.4); s(A.dry.gain, 1 - S.wet / 250); s(A.pre.delayTime, S.pre / 1000);
+  const n = S.night / 100; s(A.night.threshold, -6 - n * 34); s(A.night.ratio, 1 + n * 11); s(A.makeup.gain, 1 + n * 1.4);
+  s(A.master.gain, muted ? 0 : S.gain);
+  if (key === 'room') { clearTimeout(irT); irT = setTimeout(() => { if (A && A.roomV !== S.room) { A.conv.buffer = makeIR(S.room); A.roomV = S.room; } }, 150); }
+  if (S.mode !== 'hrtf' || S.orbit === 0) { setPan(A.pSL, -110); setPan(A.pSR, 110); }
+}
+
+/* ================= Video: màu, khung hình, 3D ================= */
+let vid = null, eyeAr = 16 / 9;
+const cv = $('cv3d'), cx = cv.getContext('2d'), oc = document.createElement('canvas'), ox = oc.getContext('2d');
+const ambCtx = $('amb').getContext('2d');
+const _pc = new Map();   // bộ nhớ đệm: chỉ ghi style khi giá trị thật sự đổi (tránh làm trình duyệt vẽ lại vô ích)
+function put(el, prop, val) { const k = el.id + '|' + prop; if (_pc.get(k) === val) return; _pc.set(k, val); el.style[prop] = val; }
+const elPic = $('pic'), elGrain = $('grain'), elVig = $('vig'), elFlash = $('flash'), elTint = $('tint'), elAmb = $('amb'), elWrap = $('screenWrap');
+let frameSeq = 0, seen3 = -1, seenAmb = -1, lastCb = 0, lastDrop = 0;
+const hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+function makeGrain() {   // họa tiết hạt thật: điểm trắng/đen với độ trong suốt ngẫu nhiên (trước đây lớp hạt không có hình nào)
+  const n = 128, c = document.createElement('canvas'); c.width = c.height = n; const x = c.getContext('2d'), im = x.createImageData(n, n), d = im.data;
+  for (let i = 0; i < d.length; i += 4) { const v = Math.random() < .5 ? 0 : 255; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = Math.random() * 255; }
+  x.putImageData(im, 0, 0); elGrain.style.backgroundImage = `url(${c.toDataURL()})`;
+}
+function applyVideo(key) {
+  // 1) bộ lọc màu: chỉ gắn khi khác giá trị gốc
+  const f = [];
+  if (S.bright !== 100) f.push(`brightness(${S.bright}%)`);
+  if (S.contrast !== 100) f.push(`contrast(${S.contrast}%)`);
+  if (S.sat !== 100) f.push(`saturate(${S.sat}%)`);
+  if (S.sharp > 0) {
+    if (!key || key === 'sharp') { const a = S.sharp / 100 * .8; $('sharpM').setAttribute('kernelMatrix', `0 ${-a} 0 ${-a} ${1 + 4 * a} ${-a} 0 ${-a} 0`); }
+    f.push('url(#sharp)');
+  }
+  put(elPic, 'filter', f.length ? f.join(' ') : 'none');
+  // 2) tông màu: lớp phủ màu đơn giản thay cho bộ lọc SVG (nhẹ hơn rất nhiều)
+  const t = S.tone;
+  put(elTint, 'display', t ? 'block' : 'none'); put(elTint, 'background', t > 0 ? 'rgb(255,140,40)' : 'rgb(70,130,255)'); put(elTint, 'opacity', (Math.abs(t) / 50 * .18).toFixed(3));
+  // 3) hạt phim: tắt hẳn (display:none, dừng animation) khi = 0
+  put(elGrain, 'display', S.grain > 0 ? 'block' : 'none'); put(elGrain, 'opacity', (S.grain / 100 * .6).toFixed(3));
+  put(elGrain, 'backgroundSize', (128 * S.grainSize / 100) + 'px'); put(elGrain, 'animationDuration', (8 / S.grainFps).toFixed(3) + 's');
+  // 4) viền tối
+  put(elVig, 'display', S.vig > 0 ? 'block' : 'none'); put(elVig, 'opacity', (S.vig / 100).toFixed(2));
+  // 5) ambilight: tắt hẳn khi = 0, độ mờ / độ phân giải chỉnh riêng
+  put(elAmb, 'display', S.amb > 0 ? 'block' : 'none'); put(elAmb, 'opacity', (S.amb / 100).toFixed(2));
+  put(elAmb, 'filter', (S.ambBlur > 0 ? `blur(${S.ambBlur}px) ` : '') + 'saturate(1.7)');
+  const aw = S.ambRes, ah = Math.max(9, Math.round(aw * 9 / 16)); if (elAmb.width !== aw || elAmb.height !== ah) { elAmb.width = aw; elAmb.height = ah; }
+  if (!key || key === 'subSize' || key === 'subPos') { const sc = $('screen'); sc.style.setProperty('--subsize', S.subSize); sc.style.setProperty('--subpos', S.subPos); }
+  frameSeq++;   // ép vẽ lại 3D / ambilight ở khung kế tiếp (kể cả khi đang tạm dừng)
+  if (!key || key === 'd3' || key === 'aspect') updateAspect();
+}
+function updateAspect() {
+  if (!vid || !vid.videoWidth) return;
+  const vw = vid.videoWidth, vh = vid.videoHeight; let ar = vw / vh;
+  if (S.d3.startsWith('sbs')) { ar = (vw / 2) / vh; if (ar < 1.2) ar *= 2; }
+  else if (S.d3.startsWith('ou')) { ar = vw / (vh / 2); if (ar > 2.9) ar /= 2; }
+  eyeAr = ar; let fit = 'contain';
+  if (S.aspect === '2.39') { ar = 2.39; fit = 'cover'; } else if (S.aspect === '1.85') { ar = 1.85; fit = 'cover'; } else if (S.aspect === '16:9') { ar = 16 / 9; fit = 'cover'; }
+  $('screen').style.setProperty('--ar', ar); vid.style.objectFit = fit; cv.style.objectFit = fit;
+  const on3 = S.d3 !== 'off'; cv.style.display = on3 ? 'block' : 'none'; vid.style.visibility = on3 ? 'hidden' : 'visible';
+}
+function draw3D() {
+  const vw = vid.videoWidth, vh = vid.videoHeight; if (!vw) return;
+  const sbs = S.d3.startsWith('sbs'), ana = S.d3.endsWith('ana');
+  const ex = sbs ? vw / 2 : vw, ey = sbs ? vh : vh / 2;
+  const H = Math.min(S.d3Res, Math.round(ey)), W = Math.round(H * eyeAr);
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; oc.width = W; oc.height = H; }
+  const lX = 0, lY = 0, rX = sbs ? ex : 0, rY = sbs ? 0 : ey;
+  const [aX, aY, bX, bY] = S.swapEyes ? [rX, rY, lX, lY] : [lX, lY, rX, rY];
+  if (!ana) { cx.drawImage(vid, aX, aY, ex, ey, 0, 0, W, H); return; }
+  cx.globalCompositeOperation = 'source-over'; cx.fillStyle = '#000'; cx.fillRect(0, 0, W, H);
+  cx.drawImage(vid, aX, aY, ex, ey, 0, 0, W, H);
+  cx.globalCompositeOperation = 'multiply'; cx.fillStyle = '#f00'; cx.fillRect(0, 0, W, H);      // mắt trái → kênh đỏ
+  ox.globalCompositeOperation = 'source-over'; ox.drawImage(vid, bX, bY, ex, ey, 0, 0, W, H);
+  ox.globalCompositeOperation = 'multiply'; ox.fillStyle = '#0ff'; ox.fillRect(0, 0, W, H);       // mắt phải → xanh lơ
+  cx.globalCompositeOperation = 'lighter'; cx.drawImage(oc, 0, 0);
+}
+/* chỉ áp dụng nhóm liên quan tới thanh vừa kéo (trước đây kéo bass cũng chạy lại toàn bộ phần hình ảnh) */
+const GRP = {}; for (const [gk, its] of Object.entries(SPEC)) its.forEach(it => GRP[it.k] = gk);
+function applyAll(key) {
+  const gp = key ? GRP[key] : null;
+  if (!gp || gp === 'audio') applyAudio(key || 'room');
+  if (!gp || gp === 'video' || gp === 'subs') applyVideo(key);
+}
+
+/* ================= Phụ đề (srt/vtt) ================= */
+let cues = [], subsOn = true, lastCue = null;
+function parseSubs(text) {
+  text = text.replace(/\r/g, '').replace(/^\uFEFF/, ''); const out = [];
+  text.split(/\n\n+/).forEach(block => {
+    const lines = block.split('\n'); const i = lines.findIndex(l => l.includes('-->')); if (i < 0) return;
+    const m = lines[i].match(/(?:(\d+):)?(\d+):(\d+)[,.](\d+)\s*-->\s*(?:(\d+):)?(\d+):(\d+)[,.](\d+)/); if (!m) return;
+    const t = (h, mi, s, ms) => (+h || 0) * 3600 + (+mi) * 60 + (+s) + parseFloat('0.' + ms);
+    out.push({ s: t(m[1], m[2], m[3], m[4]), e: t(m[5], m[6], m[7], m[8]), t: lines.slice(i + 1).join('\n').replace(/<[^>]+>/g, '').replace(/\{[^}]+\}/g, '').trim() });
+  });
+  return out.sort((a, b) => a.s - b.s);
+}
+function cueAt(t) {
+  let lo = 0, hi = cues.length - 1, r = -1;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (cues[m].s <= t) { r = m; lo = m + 1; } else hi = m - 1; }
+  for (let i = r; i >= 0 && i > r - 3; i--) if (cues[i].e >= t) return cues[i];
+  return null;
+}
+async function loadSubsFile(file) {
+  const buf = await file.arrayBuffer(); let txt = new TextDecoder('utf-8').decode(buf);
+  if (txt.includes('\uFFFD')) txt = new TextDecoder('windows-1258').decode(buf);   // phụ đề tiếng Việt cũ
+  return txt;
+}
+function setSubs(txt, name) { cues = parseSubs(txt || ''); lastCue = null; $('subs').textContent = ''; $('subName').textContent = cues.length ? `${name || 'đã nạp'} · ${cues.length} dòng` : 'chưa có'; }
+
+/* ================= Vòng lặp: 3D, ambilight, 5D, phụ đề ================= */
+const fbuf = new Uint8Array(512), sctx = $('spec').getContext('2d');
+let fpsN = 0, fpsT = performance.now();
+let last = performance.now(), lastAmb = 0, lastSpec = 0, lastTime = 0, bassAvg = 0, allAvg = 0, shakeV = 0, flashV = 0, lastRumble = 0, orbitAng = 0, mx = 0, my = 0, rx = 0, ry = 0, seeking = false;
+const avgRange = (a, b) => { let s = 0; for (let i = a; i < b; i++) s += fbuf[i]; return s / (b - a); };
+function rumble(v) {
+  try { navigator.vibrate && navigator.vibrate(Math.round(40 + v * 80)); } catch {}
+  try { const p = [...navigator.getGamepads()].find(Boolean); p && p.vibrationActuator && p.vibrationActuator.playEffect('dual-rumble', { duration: 90, strongMagnitude: Math.min(1, v), weakMagnitude: Math.min(1, v * .6) }); } catch {}
+}
+function drawSpec() {
+  const W = $('spec').width, H = $('spec').height, n = 40; sctx.clearRect(0, 0, W, H);
+  for (let i = 0; i < n; i++) {
+    const a = Math.floor(Math.pow(i / n, 2) * 300) + 1, b = Math.floor(Math.pow((i + 1) / n, 2) * 300) + 2; let s = 0; for (let j = a; j < b; j++) s += fbuf[j];
+    const v = s / (b - a) / 255; sctx.fillStyle = `hsl(${40 - v * 30},80%,${40 + v * 25}%)`; sctx.fillRect(i * (W / n) + 1, H - v * H, W / n - 2, v * H);
+  }
+}
+function tick(now) {
+  requestAnimationFrame(tick);
+  const dt = Math.min(.1, (now - last) / 1000); last = now;
+  if (!vid) return;
+  const ready = vid.readyState >= 2;
+  // chỉ vẽ lại khi có khung video MỚI (trước đây 3D vẽ lại 60 lần/giây dù phim chỉ 24 khung/giây)
+  if (!hasRVFC || (!vid.paused && now - lastCb > 120)) frameSeq++;
+  if (S.d3 !== 'off' && ready && frameSeq !== seen3) { seen3 = frameSeq; draw3D(); }
+  if (S.amb > 0 && ready && frameSeq !== seenAmb && now - lastAmb > 1000 / S.ambFps) { lastAmb = now; seenAmb = frameSeq; try { ambCtx.drawImage(S.d3 !== 'off' ? cv : vid, 0, 0, elAmb.width, elAmb.height); } catch {} }
+  fpsN++;
+  if (now - fpsT >= 1000) {
+    const fps = Math.round(fpsN * 1000 / (now - fpsT)); fpsN = 0; fpsT = now;
+    const q = vid.getVideoPlaybackQuality ? vid.getVideoPlaybackQuality() : null; const drop = q ? Math.max(0, q.droppedVideoFrames - lastDrop) : 0; if (q) lastDrop = q.droppedVideoFrames;
+    if ($('tab-video').classList.contains('on')) { const pf = $('perf'); pf.textContent = `Giao diện: ${fps} FPS · Khung rớt: ${drop}/giây ` + (drop ? '→ máy đang quá tải, hãy lùi bớt hiệu ứng vừa tăng' : '→ ổn, có thể tăng thêm'); pf.classList.toggle('warn', drop > 0 || fps < 30); }
+  }
+  let bassE = 0, allE = 0;
+  const audTab = $('tab-audio').classList.contains('on');
+  if (A && (audTab || S.shake > 0 || S.flash > 0 || S.rumble > 0)) {   // chỉ phân tích âm thanh khi thật sự cần
+    A.an.getByteFrequencyData(fbuf); bassE = avgRange(1, 5) / 255; allE = avgRange(1, 120) / 255;
+    if (now - lastSpec > 50 && audTab) { lastSpec = now; drawSpec(); }
+  }
+  const kick = Math.max(0, bassE - bassAvg - .06); bassAvg += (bassE - bassAvg) * .04;
+  const spike = Math.max(0, allE - allAvg - .10); allAvg += (allE - allAvg) * .03;
+  shakeV = Math.max(shakeV * .8, Math.min(1, kick * 5)); flashV = Math.max(flashV * .88, Math.min(1, spike * 6));
+  if (kick > .12 && S.rumble > 0 && now - lastRumble > 140) { lastRumble = now; rumble(Math.min(1, kick * 4) * S.rumble / 100); }
+  if (A && S.mode === 'hrtf' && S.orbit > 0) { orbitAng += dt * (S.orbit / 100) * 1.2; const sw = 60 * Math.sin(orbitAng); setPan(A.pSL, -110 + sw); setPan(A.pSR, 110 - sw); }
+  const par = S.parallax / 100; rx += ((-my * 5 * par) - rx) * .08; ry += ((mx * 7 * par) - ry) * .08;
+  const sh = shakeV * (S.shake / 100) * 9;
+  put(elWrap, 'transform', `rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg) translate(${((Math.random() - .5) * 2 * sh).toFixed(1)}px,${((Math.random() - .5) * 2 * sh).toFixed(1)}px)`);
+  const fo = flashV * (S.flash / 100) * .6; put(elFlash, 'opacity', fo.toFixed(3)); put(elFlash, 'visibility', fo > .004 ? 'visible' : 'hidden');
+  if (cues.length && subsOn) { const c = cueAt(vid.currentTime - S.subOff); if (c !== lastCue) { lastCue = c; $('subs').textContent = c ? c.t : ''; } }
+  else if (lastCue) { lastCue = null; $('subs').textContent = ''; }
+  if (now - lastTime > 250) {
+    lastTime = now; const d = vid.duration || 0;
+    $('tCur').textContent = fmtT(vid.currentTime); $('tDur').textContent = fmtT(d);
+    if (!seeking && d) $('seek').value = vid.currentTime / d * 1000;
+    $('bPlay').textContent = vid.paused ? '▶' : '⏸';
+  }
+}
+requestAnimationFrame(tick);
+
+/* ================= Rạp: mở / phát / đóng ================= */
+let cur = null, curUrl = null, progT = null, idleT, clickT;
+function openTheater() {
+  const th = $('theater'); th.classList.add('on'); th.classList.remove('open');
+  th.scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(() => th.classList.add('open'), 500);
+}
+function teardown() {
+  clearInterval(progT); saveProgress();
+  if (vid) { vid.pause(); vid.removeAttribute('src'); vid.load(); vid.remove(); }
+  if (curUrl) { URL.revokeObjectURL(curUrl); curUrl = null; }
+  if (A) { try { A.src.disconnect(); A.limit.disconnect(); A.an.disconnect(); } catch {} }
+  vid = null; A = null; cues = []; lastCue = null; $('subs').textContent = ''; $('subName').textContent = 'chưa có';
+}
+function saveProgress() {
+  if (!cur || cur.id === 'tmp' || !vid) return;
+  cur.progress = vid.currentTime; cur.duration = vid.duration || cur.duration;
+  idb.put(cur).catch(() => {});
+}
+async function play(m, fileOverride) {
+  let file = fileOverride, url = null;
+  try {
+    if (!file) {
+      if (m.url && !m.handle && !m.fileName) url = m.url; else file = await fileFor(m);
+    }
+  } catch (e) { toast('Không mở được file: ' + (e.message || e) + '. Bấm "Sửa" để chọn lại file.', 5000); return; }
+  teardown(); cur = m;
+  curUrl = file ? URL.createObjectURL(file) : null;
+  S = m.settings ? { ...D, ...m.settings } : presetState(m.preset); syncUI(); $('cPreset').value = PRESETS[m.preset] ? m.preset : 'Rạp phim';
+  $('nowTitle').textContent = m.title; openTheater();
+  const v = document.createElement('video'); v.playsInline = true; v.preload = 'auto'; if (url) v.crossOrigin = 'anonymous';
+  v.src = curUrl || url; $('pic').insertBefore(v, cv); vid = v; lastDrop = 0; seen3 = seenAmb = -1;
+  if (hasRVFC) { const cb = () => { if (vid !== v) return; lastCb = performance.now(); frameSeq++; v.requestVideoFrameCallback(cb); }; v.requestVideoFrameCallback(cb); }
+  ['seeked', 'loadeddata'].forEach(ev => v.addEventListener(ev, () => frameSeq++));
+  try { buildAudio(v); ac.resume(); $('status').textContent = 'âm thanh rạp: BẬT'; } catch (e) { console.error(e); $('status').textContent = 'lỗi xử lý âm thanh'; toast('Không bật được xử lý âm thanh (link ngoài cần CORS).'); }
+  v.addEventListener('loadedmetadata', () => {
+    if (m.progress > 10 && (!v.duration || m.progress < v.duration - 20)) { v.currentTime = m.progress; toast('Tiếp tục từ ' + fmtT(m.progress)); }
+    applyVideo();
+  });
+  v.addEventListener('error', () => toast('Không phát được video (codec không hỗ trợ?). Thử đổi sang mp4 H.264 + AAC bằng ffmpeg.', 6000));
+  v.addEventListener('ended', () => { if (cur && cur.id !== 'tmp') { cur.progress = 0; idb.put(cur).catch(() => {}); render(); } });
+  v.addEventListener('pause', saveProgress);
+  v.play().catch(() => toast('Bấm vào màn hình để phát'));
+  setTimeout(() => { if (vid === v && !v.paused && v.webkitAudioDecodedByteCount === 0) toast('Video chạy nhưng KHÔNG có tiếng: codec âm thanh (AC3/DTS) trình duyệt không giải mã được. Đổi sang AAC bằng ffmpeg.', 8000); }, 4500);
+  progT = setInterval(() => {
+    if (!vid || vid.paused) return; saveProgress();
+    if (cur && cur.id !== 'tmp' && !cur.poster && vid.currentTime > 8 && S.d3 === 'off') {
+      try { const c = document.createElement('canvas'); c.width = 320; c.height = 180; c.getContext('2d').drawImage(vid, 0, 0, 320, 180); cur.poster = c.toDataURL('image/jpeg', .7); idb.put(cur).catch(() => {}); render(); } catch {}
+    }
+  }, 5000);
+  if (m.subs) setSubs(m.subs, m.subsName);
+  applyAll();
+}
+function closeTheater() {
+  if (document.fullscreenElement) document.exitFullscreen();
+  teardown(); cur = null; $('theater').classList.remove('on', 'open'); document.body.classList.remove('dim'); $('bLights').textContent = 'Tắt đèn'; $('status').textContent = 'chưa phát'; render();
+}
+async function fileFor(m) {
+  if (m.handle) {
+    let p = await m.handle.queryPermission({ mode: 'read' });
+    if (p !== 'granted') p = await m.handle.requestPermission({ mode: 'read' });
+    if (p !== 'granted') throw new Error('chưa được cấp quyền đọc');
+    return m.handle.getFile();
+  }
+  return pickViaInput();
+}
+function pickViaInput() {
+  return new Promise((res, rej) => { const i = document.createElement('input'); i.type = 'file'; i.accept = 'video/*,audio/*,.mkv,.flac'; i.onchange = () => i.files[0] ? res(i.files[0]) : rej(new Error('đã huỷ')); i.oncancel = () => rej(new Error('đã huỷ')); i.click(); });
+}
+
+/* ---- điều khiển trong màn hình ---- */
+const togglePlay = () => { if (!vid) return; if (ac) ac.resume(); vid.paused ? vid.play() : vid.pause(); };
+const toggleFS = () => document.fullscreenElement ? document.exitFullscreen() : $('room').requestFullscreen();
+$('bPlay').onclick = togglePlay; $('bFS').onclick = toggleFS;
+$('bCC').onclick = () => { subsOn = !subsOn; $('bCC').style.opacity = subsOn ? 1 : .4; };
+$('spd').onchange = e => { if (vid) vid.playbackRate = +e.target.value; };
+$('seek').addEventListener('input', () => { seeking = true; if (vid && vid.duration) vid.currentTime = $('seek').value / 1000 * vid.duration; });
+$('seek').addEventListener('change', () => { seeking = false; $('seek').blur(); });
+$('bar').addEventListener('click', e => e.stopPropagation());
+$('screen').addEventListener('click', () => { if (clickT) { clearTimeout(clickT); clickT = null; toggleFS(); } else clickT = setTimeout(() => { clickT = null; togglePlay(); }, 230); });
+$('room').addEventListener('mousemove', e => {
+  const r = $('room').getBoundingClientRect(); mx = ((e.clientX - r.left) / r.width - .5) * 2; my = ((e.clientY - r.top) / r.height - .5) * 2;
+  $('screen').classList.remove('idle'); clearTimeout(idleT); idleT = setTimeout(() => { if (vid && !vid.paused) $('screen').classList.add('idle'); }, 2500);
+});
+document.addEventListener('fullscreenchange', () => { $('bFS').textContent = document.fullscreenElement ? '🗗' : '⛶'; setTimeout(updateAspect, 100); });
+document.addEventListener('keydown', e => {
+  if (!vid || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+  const k = e.key.toLowerCase();
+  if (k === ' ') { e.preventDefault(); togglePlay(); }
+  else if (k === 'arrowleft') vid.currentTime -= e.shiftKey ? 30 : 5;
+  else if (k === 'arrowright') vid.currentTime += e.shiftKey ? 30 : 5;
+  else if (k === 'arrowup' || k === 'arrowdown') { e.preventDefault(); S.gain = Math.min(4, Math.max(.2, S.gain + (k === 'arrowup' ? .1 : -.1))); syncUI(); applyAudio(); toast('Âm lượng ' + S.gain.toFixed(2) + '×', 900); }
+  else if (k === 'f') toggleFS();
+  else if (k === 'm') { muted = !muted; applyAudio(); toast(muted ? 'Tắt tiếng' : 'Bật tiếng', 900); }
+  else if (k === 'c') $('bCC').click();
+  else if (k === 'l') $('bLights').click();
+});
+window.addEventListener('beforeunload', saveProgress);
+
+/* ---- thanh công cụ dưới rạp ---- */
+$('cPreset').onchange = () => applyPreset($('cPreset').value);
+$('bSaveMovie').onclick = async () => { if (!cur || cur.id === 'tmp') return toast('Phim xem nhanh không lưu được. Hãy thêm vào thư viện trước.'); cur.settings = { ...S }; await saveEntry(cur); toast('Đã lưu cấu hình riêng cho phim này'); };
+$('bPulse').onclick = () => { shakeV = 1; flashV = 1; rumble(1); };
+$('bLights').onclick = () => { const off = document.body.classList.toggle('dim'); $('bLights').textContent = off ? 'Bật đèn' : 'Tắt đèn'; };
+$('bClose').onclick = closeTheater;
+$('tabs').onclick = e => { const t = e.target.dataset.t; if (!t) return; document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b === e.target)); document.querySelectorAll('.tabpane').forEach(p => p.classList.toggle('on', p.id === 'tab-' + t)); };
+$('bSubs').onclick = () => $('fSubs').click();
+$('fSubs').onchange = async e => { const f = e.target.files[0]; if (!f) return; const txt = await loadSubsFile(f); setSubs(txt, f.name); if (cur && cur.id !== 'tmp') { cur.subs = txt; cur.subsName = f.name; await saveEntry(cur); } e.target.value = ''; };
+$('bSubClear').onclick = async () => { setSubs(''); if (cur && cur.id !== 'tmp') { delete cur.subs; delete cur.subsName; await saveEntry(cur); } };
+
+/* ================= CRUD: thư viện ================= */
+let movies = [], formHandle = null, formFileName = '', editing = null;
+async function saveEntry(m) {
+  try { await idb.put(m); }
+  catch (e) { try { const c = { ...m }; delete c.handle; await idb.put(c); toast('Trình duyệt không lưu được quyền truy cập file, lần sau sẽ hỏi chọn lại.'); } catch (e2) { toast('Không lưu được: ' + e2); } }
+}
+async function load() { try { movies = await idb.all(); } catch (e) { movies = []; toast('Không mở được IndexedDB'); } movies.sort((a, b) => b.createdAt - a.createdAt); render(); }
+function render() {
+  const q = $('search').value.toLowerCase();
+  const items = movies.filter(x => (x.title + ' ' + (x.notes || '')).toLowerCase().includes(q));
+  $('count').textContent = items.length;
+  $('list').innerHTML = items.length ? items.map(x => {
+    const pct = x.duration ? Math.min(100, (x.progress || 0) / x.duration * 100) : 0;
+    return `<div class="card">
+      <div class="poster" data-play="${x.id}" style="${x.poster ? `background-image:url(${x.poster})` : ''}">${x.poster ? '' : '🎞️'}<div class="prog" style="width:${pct}%"></div></div>
+      <div class="body"><div class="t">${esc(x.title)}</div>
+        <div class="m">${x.rating ? '★'.repeat(+x.rating) + ' · ' : ''}${esc(x.preset)}${x.settings ? ' · cấu hình riêng' : ''}</div>
+        <div class="m">${esc(x.fileName || (x.url ? 'link' : ''))}${x.duration ? ' · ' + fmtT(x.progress || 0) + '/' + fmtT(x.duration) : ''}</div>
+        ${x.notes ? `<div class="m" style="margin-top:6px">${esc(x.notes)}</div>` : ''}</div>
+      <div class="actions"><button data-play="${x.id}">▶ Xem</button><button class="ghost" data-edit="${x.id}">Sửa</button><button class="danger" data-del="${x.id}">Xoá</button></div></div>`;
+  }).join('') : '<div class="empty">Chưa có phim nào. Thêm phim ở cột bên trái.</div>';
+}
+$('search').oninput = render;
+$('list').onclick = async e => {
+  const t = e.target.closest('[data-play],[data-edit],[data-del]'); if (!t) return;
+  const find = id => movies.find(x => x.id === id);
+  if (t.dataset.play) play(find(t.dataset.play));
+  if (t.dataset.edit) startEdit(find(t.dataset.edit));
+  if (t.dataset.del && confirm('Xoá phim này khỏi thư viện? (File gốc không bị xoá)')) { await idb.del(t.dataset.del); movies = movies.filter(x => x.id !== t.dataset.del); render(); }
+};
+function resetForm() {
+  editing = null; formHandle = null; formFileName = '';
+  ['fTitle', 'fUrl', 'fNotes', 'fRating'].forEach(i => $(i).value = ''); $('fPreset').value = 'Rạp phim'; $('pickedName').textContent = 'chưa chọn';
+  $('formTitle').textContent = 'Thêm phim vào thư viện'; $('btnCancel').style.display = 'none';
+}
+function startEdit(m) {
+  editing = m; formHandle = null; formFileName = '';
+  $('fTitle').value = m.title; $('fUrl').value = m.url || ''; $('fNotes').value = m.notes || ''; $('fRating').value = m.rating || ''; $('fPreset').value = m.preset;
+  $('pickedName').textContent = m.fileName || 'chưa chọn'; $('formTitle').textContent = 'Sửa phim (chọn lại file nếu bị di chuyển)'; $('btnCancel').style.display = '';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+$('btnCancel').onclick = resetForm;
+$('btnPick').onclick = async () => {
+  if (window.showOpenFilePicker) {
+    try {
+      const [h] = await showOpenFilePicker({ types: [{ description: 'Video', accept: { 'video/*': ['.mp4', '.m4v', '.webm', '.mov', '.mkv', '.avi'], 'audio/*': ['.mp3', '.flac', '.m4a', '.ogg', '.wav'] } }] });
+      formHandle = h; $('pickedName').textContent = h.name;
+      if (!$('fTitle').value) $('fTitle').value = h.name.replace(/\.[^.]+$/, '').replace(/[._]+/g, ' ');
+    } catch {}
+  } else {
+    try { const f = await pickViaInput(); formFileName = f.name; $('pickedName').textContent = f.name + ' (không nhớ được đường dẫn)'; if (!$('fTitle').value) $('fTitle').value = f.name.replace(/\.[^.]+$/, ''); } catch {}
+  }
+};
+$('btnSave').onclick = async () => {
+  const title = $('fTitle').value.trim(), url = $('fUrl').value.trim();
+  if (!title) return toast('Nhập tên phim');
+  if (url && !/^https?:\/\//.test(url)) return toast('Link phải bắt đầu bằng http(s)://');
+  const hasSrc = formHandle || formFileName || url || (editing && (editing.handle || editing.fileName || editing.url));
+  if (!hasSrc) return toast('Chọn file phim hoặc nhập link video trực tiếp');
+  const data = { title, url, notes: $('fNotes').value.trim(), rating: $('fRating').value, preset: $('fPreset').value };
+  let m;
+  if (editing) { m = editing; Object.assign(m, data); }
+  else m = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8), createdAt: Date.now(), progress: 0, ...data };
+  if (formHandle) { m.handle = formHandle; m.fileName = formHandle.name; }
+  else if (formFileName) { delete m.handle; m.fileName = formFileName; }
+  await saveEntry(m);
+  if (!editing) movies.unshift(m);
+  resetForm(); render();
+};
+$('btnQuick').onclick = async () => {
+  try { const f = await pickViaInput(); play({ id: 'tmp', title: f.name, preset: 'Rạp phim', progress: 0 }, f); } catch {}
+};
+
+/* ---- cấu hình máy / cường độ preset / nâng cao ---- */
+TIERS.forEach((t, i) => $('cTier').add(new Option(t, i))); $('cTier').value = TIER;
+$('cInt').value = INT; $('vInt').textContent = INT + '%';
+$('cTier').onchange = () => {
+  TIER = +$('cTier').value; LS.set('hc_tier', TIER);
+  for (const items of Object.values(SPEC)) items.forEach(it => { if (it.cap) $('c_' + it.k).max = capOf(it); });
+  syncUI(); applyAll(); toast('Giới hạn: ' + TIERS[TIER] + '. Tăng từng thanh một, theo dõi ô "Khung rớt".', 4500);
+};
+$('cInt').oninput = () => { INT = +$('cInt').value; $('vInt').textContent = INT + '%'; LS.set('hc_int', INT); applyPreset($('cPreset').value); };
+$('cAdv').onchange = () => { $('theater').classList.toggle('showadv', $('cAdv').checked); LS.set('hc_adv', $('cAdv').checked ? 1 : 0); };
+$('cAdv').checked = LS.get('hc_adv', 0) == 1; $('cAdv').onchange();
+
+/* ---- khởi động ---- */
+$('fPreset').value = 'Rạp phim';
+makeGrain(); buildPanels(); syncUI(); applyVideo(); load();
+</script>
+</body>
+</html>
