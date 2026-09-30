@@ -35,11 +35,12 @@
   .card .poster { position:relative; aspect-ratio:16/9; background:#000 center/cover; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:38px; color:#444; }
   .card .prog { position:absolute; left:0; bottom:0; height:3px; background:var(--gold); }
   .card .body { padding:10px; font:13px system-ui,sans-serif; flex:1; }
-  .card .t { font-weight:600; margin-bottom:4px; }
+  .card .t { font-weight:600; margin-bottom:4px; word-break:break-word; }
   .card .m { color:var(--muted); font-size:12px; }
   .card .actions { display:flex; gap:6px; padding:0 10px 10px; }
   .card .actions button { padding:6px 10px; font-size:12px; }
   .empty { color:var(--muted); font:14px system-ui,sans-serif; padding:18px 0; }
+  #sharedPanel .poster { color:var(--gold); }
 
   /* ---------- theater ---------- */
   #theater { display:none; margin-bottom:16px; }
@@ -118,9 +119,6 @@
     <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
     <button class="ghost" id="btnQuick">▶ Xem nhanh 1 file (không lưu)</button>
     <input type="file" id="fFile" accept="video/*,audio/*,.mkv,.flac" style="display:none">
-    <div class="row"><button class="ghost" id="btnSaved">📁 Mở thư mục &quot;saved edits&quot;</button><span class="badge" id="savedName">chưa chọn</span></div>
-    <div id="savedList" style="max-height:260px;overflow:auto"></div>
-    <input type="file" id="fDir" webkitdirectory multiple style="display:none">
     <div class="hint" style="margin-top:12px">Nên dùng <b>mp4 (H.264 + AAC)</b>. File có tiếng AC3/DTS thường bị câm trên trình duyệt: đổi bằng <code>ffmpeg -i in.mkv -c:v copy -c:a aac -b:a 384k out.mp4</code> (giữ nguyên 5.1).</div>
   </aside>
 
@@ -184,6 +182,18 @@
           <div class="grid2" id="g-subs"></div>
         </div>
       </div>
+    </div>
+
+    <!-- ===== Thư viện chung: saved edits (luôn hiện cho mọi người) ===== -->
+    <div class="panel dimmable" id="sharedPanel" style="margin-bottom:16px">
+      <h2>Thư viện chung · saved edits <span id="savedCount" class="badge"></span></h2>
+      <input id="savedSearch" placeholder="Tìm trong saved edits…">
+      <div class="list" id="savedList"></div>
+      <div class="row">
+        <span class="badge" id="savedName">đang tải…</span>
+        <button class="ghost" id="btnSaved" style="display:none">📁 Mở thư mục trên máy (dự phòng)</button>
+      </div>
+      <input type="file" id="fDir" webkitdirectory multiple style="display:none">
     </div>
 
     <!-- ===== Read ===== -->
@@ -765,13 +775,22 @@ $('cInt').oninput = () => { INT = +$('cInt').value; $('vInt').textContent = INT 
 $('cAdv').onchange = () => { $('theater').classList.toggle('showadv', $('cAdv').checked); LS.set('hc_adv', $('cAdv').checked ? 1 : 0); };
 $('cAdv').checked = LS.get('hc_adv', 0) == 1; $('cAdv').onchange();
 
-/* ================= Thư mục "saved edits" ================= */
+/* ================= Thư viện chung "saved edits" (luôn hiện cho mọi người) ================= */
 const VID_EXT = /\.(mp4|m4v|webm|mov|mkv|avi|mp3|flac|m4a|ogg|wav)$/i;
+const AUD_EXT = /\.(mp3|flac|m4a|ogg|wav)$/i;
 let savedFiles = [], savedDir = null;
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true });
 function renderSaved() {
-  $('savedList').innerHTML = savedFiles.map((f, i) => `<button class="ghost" data-sv="${i}" style="display:block;width:100%;text-align:left;margin-top:6px">▶ ${esc(f.name)}</button>`).join('');
+  const q = $('savedSearch').value.toLowerCase();
+  const items = savedFiles.map((f, i) => ({ f, i })).filter(x => x.f.name.toLowerCase().includes(q));
+  $('savedCount').textContent = items.length;
+  $('savedList').innerHTML = items.length ? items.map(({ f, i }) => `<div class="card">
+    <div class="poster" data-sv="${i}">${AUD_EXT.test(f.name) ? '🎵' : '🎞️'}</div>
+    <div class="body"><div class="t">${esc(f.name.replace(/\.[^.]+$/, ''))}</div></div>
+    <div class="actions"><button data-sv="${i}">▶ Xem</button></div></div>`).join('')
+    : '<div class="empty">Không có file nào.</div>';
 }
+$('savedSearch').oninput = renderSaved;
 async function showSavedDir(dir) {
   const out = [];
   for await (const [name, h] of dir.entries()) if (h.kind === 'file' && VID_EXT.test(name)) out.push({ name, get: () => h.getFile() });
@@ -779,7 +798,7 @@ async function showSavedDir(dir) {
   $('savedName').textContent = dir.name + ' · ' + savedFiles.length + ' file';
 }
 $('btnSaved').onclick = async () => {
-  if (await loadDefaultSaved()) return;
+  if (await loadDefaultSaved()) { $('btnSaved').style.display = 'none'; return; }
   if (window.showDirectoryPicker) {
     try {
       let dir = savedDir;
@@ -798,7 +817,7 @@ $('savedList').onclick = async e => {
   const b = e.target.closest('[data-sv]'); if (!b) return;
   const f = savedFiles[+b.dataset.sv];
   try {
-    const m = { id: 'tmp', title: f.name.replace(/\.[^.]+$/, ''), preset: 'Rạp phim', progress: 0 };
+    const m = { id: 'tmp', title: f.name.replace(/\.[^.]+$/, ''), preset: AUD_EXT.test(f.name) ? 'Nhạc – Cân bằng' : 'Rạp phim', progress: 0 };
     if (f.url) { m.url = f.url; play(m); } else play(m, await f.get());
   }
   catch (err) { toast('Không mở được file: ' + (err.message || err)); }
@@ -809,9 +828,9 @@ const SAVED_REPO = ''; // tuỳ chọn: 'tenban/tenrepo' nếu dùng tên miền
 const segEnc = s => s.split('/').map(encodeURIComponent).join('/');
 async function loadDefaultSaved() {
   let names = null;
-  // 1) danh sách thủ công: saved edits/list.json  (["a.mp4","b.mp4"])
+  // 1) danh sách thủ công: saved edits/list.json  (["a.mp4","b.mp3"]) — cách chắc nhất, không giới hạn lượt truy cập
   try { const r = await fetch(segEnc(SAVED_DIR) + '/list.json', { cache: 'no-cache' }); if (r.ok) names = await r.json(); } catch {}
-  // 2) GitHub API (tự nhận repo từ địa chỉ *.github.io)
+  // 2) GitHub API (tự nhận repo từ địa chỉ *.github.io) — giới hạn ~60 lượt/giờ mỗi IP
   if (!names) {
     let repo = SAVED_REPO; const m = location.hostname.match(/^(.+)\.github\.io$/);
     if (!repo && m) { const seg = location.pathname.split('/')[1]; repo = m[1] + '/' + (seg && !seg.includes('.') ? seg : m[1] + '.github.io'); }
@@ -822,7 +841,7 @@ async function loadDefaultSaved() {
     const r = await fetch(segEnc(SAVED_DIR) + '/');
     if (r.ok && /html/.test(r.headers.get('content-type') || '')) { const d = new DOMParser().parseFromString(await r.text(), 'text/html'); names = [...d.querySelectorAll('a')].map(a => decodeURIComponent((a.getAttribute('href') || '').split('/').pop())); }
   } catch {}
-  names = (names || []).filter(n => VID_EXT.test(n));
+  names = (Array.isArray(names) ? names : []).filter(n => typeof n === 'string' && VID_EXT.test(n));
   if (!names.length) return false;
   savedFiles = names.map(n => ({ name: n, url: segEnc(SAVED_DIR) + '/' + encodeURIComponent(n) })).sort(byName); renderSaved();
   $('savedName').textContent = SAVED_DIR + ' · ' + savedFiles.length + ' file';
@@ -830,6 +849,9 @@ async function loadDefaultSaved() {
 }
 (async () => {
   if (await loadDefaultSaved()) return;
+  $('btnSaved').style.display = '';
+  $('savedName').textContent = 'Không tìm thấy thư mục "saved edits" trên server';
+  renderSaved();
   try {
     const d = await idb.getMeta('savedDir'); if (!d) return; savedDir = d;
     if ((await d.queryPermission({ mode: 'read' })) === 'granted') await showSavedDir(d);
