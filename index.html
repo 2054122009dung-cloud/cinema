@@ -118,6 +118,9 @@
     <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
     <button class="ghost" id="btnQuick">▶ Xem nhanh 1 file (không lưu)</button>
     <input type="file" id="fFile" accept="video/*,audio/*,.mkv,.flac" style="display:none">
+    <div class="row"><button class="ghost" id="btnSaved">📁 Mở thư mục &quot;saved edits&quot;</button><span class="badge" id="savedName">chưa chọn</span></div>
+    <div id="savedList" style="max-height:260px;overflow:auto"></div>
+    <input type="file" id="fDir" webkitdirectory multiple style="display:none">
     <div class="hint" style="margin-top:12px">Nên dùng <b>mp4 (H.264 + AAC)</b>. File có tiếng AC3/DTS thường bị câm trên trình duyệt: đổi bằng <code>ffmpeg -i in.mkv -c:v copy -c:a aac -b:a 384k out.mp4</code> (giữ nguyên 5.1).</div>
   </aside>
 
@@ -202,11 +205,13 @@ let toastT; function toast(msg, ms = 3500) { const t = $('toast'); t.textContent
 
 /* ================= IndexedDB (lưu thư viện + quyền truy cập file) ================= */
 const idb = {
-  open() { return new Promise((res, rej) => { const r = indexedDB.open('homecinema5d', 1); r.onupgradeneeded = () => r.result.createObjectStore('movies', { keyPath: 'id' }); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
-  async tx(mode, fn) { const db = await (this._db || (this._db = this.open())); return new Promise((res, rej) => { const t = db.transaction('movies', mode); const rq = fn(t.objectStore('movies')); t.oncomplete = () => res(rq && rq.result); t.onerror = () => rej(t.error); }); },
+  open() { return new Promise((res, rej) => { const r = indexedDB.open('homecinema5d', 2); r.onupgradeneeded = () => { const d = r.result; if (!d.objectStoreNames.contains('movies')) d.createObjectStore('movies', { keyPath: 'id' }); if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta'); }; r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
+  async tx(mode, fn, store = 'movies') { const db = await (this._db || (this._db = this.open())); return new Promise((res, rej) => { const t = db.transaction(store, mode); const rq = fn(t.objectStore(store)); t.oncomplete = () => res(rq && rq.result); t.onerror = () => rej(t.error); }); },
   all() { return this.tx('readonly', s => s.getAll()); },
   put(m) { return this.tx('readwrite', s => s.put(m)); },
-  del(id) { return this.tx('readwrite', s => s.delete(id)); }
+  del(id) { return this.tx('readwrite', s => s.delete(id)); },
+  getMeta(k) { return this.tx('readonly', s => s.get(k), 'meta'); },
+  setMeta(k, v) { return this.tx('readwrite', s => s.put(v, k), 'meta'); }
 };
 
 /* ================= Cài đặt & preset ================= */
@@ -759,6 +764,46 @@ $('cTier').onchange = () => {
 $('cInt').oninput = () => { INT = +$('cInt').value; $('vInt').textContent = INT + '%'; LS.set('hc_int', INT); applyPreset($('cPreset').value); };
 $('cAdv').onchange = () => { $('theater').classList.toggle('showadv', $('cAdv').checked); LS.set('hc_adv', $('cAdv').checked ? 1 : 0); };
 $('cAdv').checked = LS.get('hc_adv', 0) == 1; $('cAdv').onchange();
+
+/* ================= Thư mục "saved edits" ================= */
+const VID_EXT = /\.(mp4|m4v|webm|mov|mkv|avi|mp3|flac|m4a|ogg|wav)$/i;
+let savedFiles = [], savedDir = null;
+const byName = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true });
+function renderSaved() {
+  $('savedList').innerHTML = savedFiles.map((f, i) => `<button class="ghost" data-sv="${i}" style="display:block;width:100%;text-align:left;margin-top:6px">▶ ${esc(f.name)}</button>`).join('');
+}
+async function showSavedDir(dir) {
+  const out = [];
+  for await (const [name, h] of dir.entries()) if (h.kind === 'file' && VID_EXT.test(name)) out.push({ name, get: () => h.getFile() });
+  savedFiles = out.sort(byName); renderSaved();
+  $('savedName').textContent = dir.name + ' · ' + savedFiles.length + ' file';
+}
+$('btnSaved').onclick = async () => {
+  if (window.showDirectoryPicker) {
+    try {
+      let dir = savedDir;
+      if (dir && (await dir.queryPermission({ mode: 'read' })) !== 'granted' && (await dir.requestPermission({ mode: 'read' })) !== 'granted') dir = null;
+      if (!dir) { dir = await showDirectoryPicker({ id: 'savededits', mode: 'read' }); try { await idb.setMeta('savedDir', dir); } catch {} }
+      savedDir = dir; await showSavedDir(dir);
+    } catch (e) { if (e.name !== 'AbortError') toast('Không mở được thư mục: ' + (e.message || e)); }
+  } else $('fDir').click();
+};
+$('fDir').onchange = e => {
+  const fs = [...e.target.files].filter(f => VID_EXT.test(f.name));
+  savedFiles = fs.map(f => ({ name: f.name, get: async () => f })).sort(byName); renderSaved();
+  $('savedName').textContent = 'saved edits · ' + savedFiles.length + ' file'; e.target.value = '';
+};
+$('savedList').onclick = async e => {
+  const b = e.target.closest('[data-sv]'); if (!b) return;
+  const f = savedFiles[+b.dataset.sv];
+  try { const file = await f.get(); play({ id: 'tmp', title: f.name.replace(/\.[^.]+$/, ''), preset: 'Rạp phim', progress: 0 }, file); }
+  catch (err) { toast('Không mở được file: ' + (err.message || err)); }
+};
+(async () => { try {
+  const d = await idb.getMeta('savedDir'); if (!d) return; savedDir = d;
+  if ((await d.queryPermission({ mode: 'read' })) === 'granted') await showSavedDir(d);
+  else $('savedName').textContent = d.name + ' · bấm để mở lại';
+} catch {} })();
 
 /* ---- khởi động ---- */
 $('fPreset').value = 'Rạp phim';
