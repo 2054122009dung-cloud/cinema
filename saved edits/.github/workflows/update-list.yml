@@ -1,1 +1,29 @@
 
+name: Update list.json
+on:
+  push:
+    paths:
+      - 'saved edits/**'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate list.json
+        run: |
+          cd "saved edits"
+          python3 - <<'EOF'
+          import os, json
+          ext = ('.mp4','.m4v','.webm','.mov','.mkv','.avi','.mp3','.flac','.m4a','.ogg','.wav')
+          names = sorted(f for f in os.listdir('.') if f.lower().endswith(ext))
+          json.dump(names, open('list.json','w'), ensure_ascii=False, indent=2)
+          EOF
+      - name: Commit
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add "saved edits/list.json"
+          git diff --cached --quiet || (git commit -m "update list.json" && git push)
