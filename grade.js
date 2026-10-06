@@ -2,7 +2,11 @@
    Thay các bộ lọc CSS bằng 1 shader: đường cong S, split-tone teal/orange, halation,
    làm nét unsharp-mask, hạt phim đổi mỗi khung (nhiều ở vùng tối), viền tối.
    Dùng lại các thanh có sẵn: bright, contrast, sat, tone, sharp, grain, grainFps, vig.
-   Tự tắt khi xem 3D, hoặc khi trình duyệt không hỗ trợ WebGL (về lại bộ lọc CSS cũ). */
+   Tự tắt khi xem 3D, hoặc khi trình duyệt không hỗ trợ WebGL (về lại bộ lọc CSS cũ).
+   
+   grade.js
+   
+   */
 (() => {
   'use strict';
   const HAL = 0.18;                       // độ toả sáng (halation), 0 = tắt. Chỉnh thử: HC_HAL.value = 0.3
