@@ -2,7 +2,11 @@
    1) Đoán tâm trạng cảnh (hành động / căng thẳng / tươi sáng / êm-thoại) từ độ sáng, màu, nhịp cắt, độ to, bass
       rồi kéo các thanh Bass, Lời thoại, Echo, Chế độ đêm, Tương phản, Bão hoà, Tông màu, Viền tối, Rung, Chớp. Thanh trượt chạy theo thật.
    2) Va chạm: phát hiện tiếng nổ / đập (bass bật mạnh) và tiếng keng (cao tần bật mạnh) trong vài mili-giây,
-      rồi thêm: tiếng dội trầm tổng hợp, nhấn bass, ánh kim loại, vang loé lên, đồng bộ rung + chớp màn hình. */
+      rồi thêm: tiếng dội trầm tổng hợp, nhấn bass, ánh kim loại, vang loé lên, đồng bộ rung + chớp màn hình.
+      
+      auto.js
+      
+      */
 (() => {
   'use strict';
   const KEYS = ['bass', 'dialog', 'wet', 'night', 'contrast', 'sat', 'tone', 'vig', 'shake', 'flash'];
