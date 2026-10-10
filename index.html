@@ -57,6 +57,8 @@
   #pic { position:absolute; inset:0; }
   #pic video,#pic canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:#000; }
   #pic canvas { display:none; }
+  #pic iframe { position:absolute; inset:0; width:100%; height:100%; border:0; background:#000; pointer-events:none; }
+  #pic iframe.free { pointer-events:auto; }
   /* hạt phim: lớp nhỏ (124% màn hình thay vì 200%), pha trộn thường (không blend-mode), chỉ tồn tại khi > 0 */
   #grain { position:absolute; inset:-12%; display:none; pointer-events:none; opacity:0; z-index:3; image-rendering:pixelated; will-change:transform; animation:grain .67s steps(1,end) infinite; }
   @keyframes grain { 0%{transform:translate(0,0)} 12.5%{transform:translate(-5%,3%)} 25%{transform:translate(4%,-4%)} 37.5%{transform:translate(-3%,-5%)} 50%{transform:translate(5%,4%)} 62.5%{transform:translate(-5%,-2%)} 75%{transform:translate(2%,5%)} 87.5%{transform:translate(-2%,-3%)} 100%{transform:translate(0,0)} }
@@ -111,6 +113,17 @@
     <label>File phim đã tải về</label>
     <div class="row" style="margin-top:0"><button class="ghost" id="btnPick">📂 Chọn file phim</button><span class="badge" id="pickedName">chưa chọn</span></div>
     <label>…hoặc link video trực tiếp (.mp4/.webm, server phải cho CORS)</label><input id="fUrl" placeholder="https://.../movie.mp4">
+
+    <label>Âm thanh riêng (tuỳ chọn): phát cùng lúc với video</label>
+    <div class="row" style="margin-top:0">
+      <button class="ghost" id="btnPickAudio">🎵 Chọn file audio</button>
+      <span class="badge" id="pickedAudio">chưa chọn</span>
+      <button class="danger" id="btnClearAudio">✕</button>
+    </div>
+    <input id="fAudioUrl" placeholder="…hoặc link audio trực tiếp (.mp3/.m4a, cần CORS)" style="margin-top:6px">
+    <label>…hoặc nhúng iframe (YouTube / trang khác): hình từ iframe, tiếng từ file audio</label>
+    <input id="fEmbed" placeholder="https://www.youtube.com/watch?v=...">
+
     <label>Ghi chú</label><textarea id="fNotes" rows="2" placeholder="Bản 3D SBS, phụ đề Việt…"></textarea>
     <label>Đánh giá</label>
     <select id="fRating"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
@@ -118,6 +131,7 @@
     <div class="row"><button id="btnSave">Lưu</button><button class="ghost" id="btnCancel" style="display:none">Huỷ sửa</button></div>
     <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
     <button class="ghost" id="btnQuick">▶ Xem nhanh 1 file (không lưu)</button>
+    <button class="ghost" id="btnQuick2" style="margin-top:8px">▶ Xem nhanh video + audio rời (chọn 2 file cùng lúc)</button>
     <input type="file" id="fFile" accept="video/*,audio/*,.mkv,.flac" style="display:none">
     <div class="hint" style="margin-top:12px">Nên dùng <b>mp4 (H.264 + AAC)</b>. File có tiếng AC3/DTS thường bị câm trên trình duyệt: đổi bằng <code>ffmpeg -i in.mkv -c:v copy -c:a aac -b:a 384k out.mp4</code> (giữ nguyên 5.1).</div>
   </aside>
@@ -545,6 +559,7 @@ function tick(now) {
   const dt = Math.min(.1, (now - last) / 1000); last = now;
   if (!vid) return;
   const ready = vid.readyState >= 2;
+  syncSlave(now);
   // chỉ vẽ lại khi có khung video MỚI (trước đây 3D vẽ lại 60 lần/giây dù phim chỉ 24 khung/giây)
   if (!hasRVFC || (!vid.paused && now - lastCb > 120)) frameSeq++;
   if (S.d3 !== 'off' && ready && frameSeq !== seen3) { seen3 = frameSeq; draw3D(); }
@@ -581,6 +596,73 @@ function tick(now) {
 }
 requestAnimationFrame(tick);
 
+/* ===== Video + audio rời / iframe + audio ===== */
+let aud = null, audUrl = null, frame = null, frameYT = false, ytT = 0, ytAt = 0, lastSync = 0;
+const ytCmd = (fn, args = []) => { try { frame && frame.contentWindow.postMessage(JSON.stringify({ event: 'command', func: fn, args }), '*'); } catch {} };
+const ytId = u => { const r = (u || '').match(/(?:youtu\.be\/|[?&]v=|embed\/|shorts\/|live\/)([\w-]{11})/); return r ? r[1] : null; };
+
+function mountFrame(url) {
+  const id = ytId(url); frameYT = !!id;
+  const src = id
+    ? `https://www.youtube.com/embed/${id}?enablejsapi=1&autoplay=0&mute=1&controls=0&disablekb=1&playsinline=1&rel=0&modestbranding=1&iv_load_policy=3` + (location.origin.startsWith('http') ? '&origin=' + encodeURIComponent(location.origin) : '')
+    : url;
+  const f = document.createElement('iframe');
+  f.src = src; f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+  if (!frameYT) { f.className = 'free'; toast('Iframe không phải YouTube: không đồng bộ được, hãy tự tắt tiếng & bấm phát trong khung.', 6000); }
+  f.addEventListener('load', () => {
+    if (!frameYT) return;
+    try { f.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 1 }), '*'); } catch {}
+    ytCmd('mute');
+    if (vid && !vid.paused) { ytCmd('seekTo', [vid.currentTime, true]); ytCmd('playVideo'); }
+  });
+  $('pic').insertBefore(f, cv); frame = f;
+}
+window.addEventListener('message', e => {
+  if (!frame || e.source !== frame.contentWindow) return;
+  let d; try { d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch { return; }
+  const t = d && d.info && d.info.currentTime;
+  if (typeof t === 'number') { ytT = t; ytAt = performance.now(); }
+});
+
+/* video là đồng hồ chính, audio đi theo */
+function linkSlave(master, slave) {
+  const sync = () => { try { slave.currentTime = master.currentTime; } catch {} };
+  master.addEventListener('play', () => { sync(); slave.play().catch(() => {}); });
+  master.addEventListener('playing', () => { if (slave.paused) slave.play().catch(() => {}); });
+  master.addEventListener('pause', () => slave.pause());
+  master.addEventListener('waiting', () => slave.pause());
+  master.addEventListener('ended', () => slave.pause());
+  master.addEventListener('seeking', sync);
+  master.addEventListener('ratechange', () => { slave.playbackRate = master.playbackRate; });
+}
+/* audio là đồng hồ chính, iframe YouTube đi theo */
+function linkFrame(master) {
+  master.addEventListener('play', () => { ytCmd('seekTo', [master.currentTime, true]); ytCmd('playVideo'); });
+  master.addEventListener('playing', () => ytCmd('playVideo'));
+  master.addEventListener('pause', () => ytCmd('pauseVideo'));
+  master.addEventListener('waiting', () => ytCmd('pauseVideo'));
+  master.addEventListener('seeking', () => ytCmd('seekTo', [master.currentTime, true]));
+  master.addEventListener('ratechange', () => ytCmd('setPlaybackRate', [master.playbackRate]));
+}
+/* chỉnh lệch dần (gọi trong tick) */
+function syncSlave(now) {
+  if (!vid || vid.paused || now - lastSync < 500) return; lastSync = now;
+  if (aud && aud !== vid) { if (aud.readyState >= 2 && Math.abs(aud.currentTime - vid.currentTime) > .15) aud.currentTime = vid.currentTime; }
+  else if (frame && frameYT && now - ytAt < 1500) {
+    const t = ytT + (now - ytAt) / 1000 * vid.playbackRate;
+    if (Math.abs(t - vid.currentTime) > .7) ytCmd('seekTo', [vid.currentTime, true]);
+  }
+}
+async function fileFromHandle(h) {
+  let p = await h.queryPermission({ mode: 'read' });
+  if (p !== 'granted') p = await h.requestPermission({ mode: 'read' });
+  if (p !== 'granted') throw new Error('chưa được cấp quyền đọc');
+  return h.getFile();
+}
+function pickMany() {
+  return new Promise((res, rej) => { const i = document.createElement('input'); i.type = 'file'; i.multiple = true; i.accept = 'video/*,audio/*,.mkv,.flac'; i.onchange = () => i.files.length ? res([...i.files]) : rej(); i.oncancel = () => rej(); i.click(); });
+}
+
 /* ================= Rạp: mở / phát / đóng ================= */
 let cur = null, curUrl = null, progT = null, idleT, clickT;
 function openTheater() {
@@ -590,7 +672,10 @@ function openTheater() {
 function teardown() {
   clearInterval(progT); saveProgress();
   if (vid) { vid.pause(); vid.removeAttribute('src'); vid.load(); vid.remove(); }
+  if (aud) { aud.pause(); aud.removeAttribute('src'); aud.load(); aud = null; }
+  if (frame) { frame.remove(); frame = null; frameYT = false; }
   if (curUrl) { URL.revokeObjectURL(curUrl); curUrl = null; }
+  if (audUrl) { URL.revokeObjectURL(audUrl); audUrl = null; }
   if (A) { try { A.src.disconnect(); A.limit.disconnect(); A.an.disconnect(); } catch {} }
   vid = null; A = null; cues = []; lastCue = null; $('subs').textContent = ''; $('subName').textContent = 'chưa có';
 }
@@ -599,34 +684,46 @@ function saveProgress() {
   cur.progress = vid.currentTime; cur.duration = vid.duration || cur.duration;
   idb.put(cur).catch(() => {});
 }
-async function play(m, fileOverride) {
-  let file = fileOverride, url = null;
+async function play(m, fileOverride, audioOverride) {
+  let file = fileOverride, afile = audioOverride, url = null, aurl = m.audioUrl || null;
   try {
-    if (!file) {
-      if (m.url && !m.handle && !m.fileName) url = m.url; else file = await fileFor(m);
-    }
+    if (!m.embed && !file) { if (m.url && !m.handle && !m.fileName) url = m.url; else file = await fileFor(m); }
+    if (!afile && !aurl && (m.audioHandle || m.audioFileName)) afile = m.audioHandle ? await fileFromHandle(m.audioHandle) : await pickViaInput();
   } catch (e) { toast('Không mở được file: ' + (e.message || e) + '. Bấm "Sửa" để chọn lại file.', 5000); return; }
+  if (m.embed && !afile && !aurl) return toast('Chế độ iframe cần thêm file audio (hoặc link audio).');
   teardown(); cur = m;
   curUrl = file ? URL.createObjectURL(file) : null;
+  audUrl = afile ? URL.createObjectURL(afile) : null;
   S = m.settings ? { ...D, ...m.settings } : presetState(m.preset); syncUI(); $('cPreset').value = PRESETS[m.preset] ? m.preset : 'Rạp phim';
   $('nowTitle').textContent = m.title; openTheater();
-  const v = document.createElement('video'); v.playsInline = true; v.preload = 'auto'; if (url) v.crossOrigin = 'anonymous';
-  v.src = curUrl || url; $('pic').insertBefore(v, cv); vid = v; lastDrop = 0; seen3 = seenAmb = -1;
-  if (hasRVFC) { const cb = () => { if (vid !== v) return; lastCb = performance.now(); frameSeq++; v.requestVideoFrameCallback(cb); }; v.requestVideoFrameCallback(cb); }
+
+  const aSrc = audUrl || aurl;
+  if (aSrc) { aud = new Audio(); aud.preload = 'auto'; if (!audUrl) aud.crossOrigin = 'anonymous'; aud.src = aSrc; aud.addEventListener('error', () => toast('Không phát được file audio.', 5000)); }
+  let v;
+  if (m.embed) { v = aud; mountFrame(m.embed); }                       // audio là đồng hồ chính
+  else {
+    v = document.createElement('video'); v.playsInline = true; v.preload = 'auto'; if (url) v.crossOrigin = 'anonymous';
+    v.src = curUrl || url; if (aud) v.muted = true;                    // video câm, tiếng lấy từ audio
+    $('pic').insertBefore(v, cv);
+  }
+  vid = v; lastDrop = 0; seen3 = seenAmb = -1;
+  if (aud && aud !== v) linkSlave(v, aud);
+  if (frame && frameYT) linkFrame(v);
+  if (hasRVFC && v.requestVideoFrameCallback) { const cb = () => { if (vid !== v) return; lastCb = performance.now(); frameSeq++; v.requestVideoFrameCallback(cb); }; v.requestVideoFrameCallback(cb); }
   ['seeked', 'loadeddata'].forEach(ev => v.addEventListener(ev, () => frameSeq++));
-  try { buildAudio(v); ac.resume(); $('status').textContent = 'âm thanh rạp: BẬT'; } catch (e) { console.error(e); $('status').textContent = 'lỗi xử lý âm thanh'; toast('Không bật được xử lý âm thanh (link ngoài cần CORS).'); }
+  try { buildAudio(aud || v); ac.resume(); $('status').textContent = 'âm thanh rạp: BẬT'; } catch (e) { console.error(e); $('status').textContent = 'lỗi xử lý âm thanh'; toast('Không bật được xử lý âm thanh (link ngoài cần CORS).'); }
   v.addEventListener('loadedmetadata', () => {
     if (m.progress > 10 && (!v.duration || m.progress < v.duration - 20)) { v.currentTime = m.progress; toast('Tiếp tục từ ' + fmtT(m.progress)); }
     applyVideo();
   });
-  v.addEventListener('error', () => toast('Không phát được video (codec không hỗ trợ?). Thử đổi sang mp4 H.264 + AAC bằng ffmpeg.', 6000));
+  v.addEventListener('error', () => toast('Không phát được (codec không hỗ trợ?). Thử đổi sang mp4 H.264 + AAC bằng ffmpeg.', 6000));
   v.addEventListener('ended', () => { if (cur && cur.id !== 'tmp') { cur.progress = 0; idb.put(cur).catch(() => {}); render(); } });
   v.addEventListener('pause', saveProgress);
   v.play().catch(() => toast('Bấm vào màn hình để phát'));
-  setTimeout(() => { if (vid === v && !v.paused && v.webkitAudioDecodedByteCount === 0) toast('Video chạy nhưng KHÔNG có tiếng: codec âm thanh (AC3/DTS) trình duyệt không giải mã được. Đổi sang AAC bằng ffmpeg.', 8000); }, 4500);
+  setTimeout(() => { if (!aud && vid === v && !v.paused && v.webkitAudioDecodedByteCount === 0) toast('Video chạy nhưng KHÔNG có tiếng: codec âm thanh (AC3/DTS) trình duyệt không giải mã được. Đổi sang AAC bằng ffmpeg.', 8000); }, 4500);
   progT = setInterval(() => {
     if (!vid || vid.paused) return; saveProgress();
-    if (cur && cur.id !== 'tmp' && !cur.poster && vid.currentTime > 8 && S.d3 === 'off') {
+    if (cur && cur.id !== 'tmp' && !cur.poster && !m.embed && vid.currentTime > 8 && S.d3 === 'off') {
       try { const c = document.createElement('canvas'); c.width = 320; c.height = 180; c.getContext('2d').drawImage(vid, 0, 0, 320, 180); cur.poster = c.toDataURL('image/jpeg', .7); idb.put(cur).catch(() => {}); render(); } catch {}
     }
   }, 5000);
@@ -692,9 +789,10 @@ $('bSubClear').onclick = async () => { setSubs(''); if (cur && cur.id !== 'tmp')
 
 /* ================= CRUD: thư viện ================= */
 let movies = [], formHandle = null, formFileName = '', editing = null;
+let formAudioHandle = null, formAudioName = '', audioCleared = false;
 async function saveEntry(m) {
   try { await idb.put(m); }
-  catch (e) { try { const c = { ...m }; delete c.handle; await idb.put(c); toast('Trình duyệt không lưu được quyền truy cập file, lần sau sẽ hỏi chọn lại.'); } catch (e2) { toast('Không lưu được: ' + e2); } }
+  catch (e) { try { const c = { ...m }; delete c.handle; delete c.audioHandle; await idb.put(c); toast('Trình duyệt không lưu được quyền truy cập file, lần sau sẽ hỏi chọn lại.'); } catch (e2) { toast('Không lưu được: ' + e2); } }
 }
 async function load() { try { movies = await idb.all(); } catch (e) { movies = []; toast('Không mở được IndexedDB'); } movies.sort((a, b) => b.createdAt - a.createdAt); render(); }
 function render() {
@@ -707,7 +805,7 @@ function render() {
       <div class="poster" data-play="${x.id}" style="${x.poster ? `background-image:url(${x.poster})` : ''}">${x.poster ? '' : '🎞️'}<div class="prog" style="width:${pct}%"></div></div>
       <div class="body"><div class="t">${esc(x.title)}</div>
         <div class="m">${x.rating ? '★'.repeat(+x.rating) + ' · ' : ''}${esc(x.preset)}${x.settings ? ' · cấu hình riêng' : ''}</div>
-        <div class="m">${esc(x.fileName || (x.url ? 'link' : ''))}${x.duration ? ' · ' + fmtT(x.progress || 0) + '/' + fmtT(x.duration) : ''}</div>
+        <div class="m">${esc(x.embed ? 'iframe + audio' : (x.fileName || (x.url ? 'link' : '')))}${x.audioFileName || x.audioUrl ? ' + 🎵' : ''}${x.duration ? ' · ' + fmtT(x.progress || 0) + '/' + fmtT(x.duration) : ''}</div>
         ${x.notes ? `<div class="m" style="margin-top:6px">${esc(x.notes)}</div>` : ''}</div>
       <div class="actions"><button data-play="${x.id}">▶ Xem</button><button class="ghost" data-edit="${x.id}">Sửa</button><button class="danger" data-del="${x.id}">Xoá</button></div></div>`;
   }).join('') : '<div class="empty">Chưa có phim nào. Thêm phim ở cột bên trái.</div>';
@@ -723,12 +821,17 @@ $('list').onclick = async e => {
 function resetForm() {
   editing = null; formHandle = null; formFileName = '';
   ['fTitle', 'fUrl', 'fNotes', 'fRating'].forEach(i => $(i).value = ''); $('fPreset').value = 'Rạp phim'; $('pickedName').textContent = 'chưa chọn';
+  formAudioHandle = null; formAudioName = ''; audioCleared = false;
+  $('fAudioUrl').value = ''; $('fEmbed').value = ''; $('pickedAudio').textContent = 'chưa chọn';
   $('formTitle').textContent = 'Thêm phim vào thư viện'; $('btnCancel').style.display = 'none';
 }
 function startEdit(m) {
   editing = m; formHandle = null; formFileName = '';
   $('fTitle').value = m.title; $('fUrl').value = m.url || ''; $('fNotes').value = m.notes || ''; $('fRating').value = m.rating || ''; $('fPreset').value = m.preset;
   $('pickedName').textContent = m.fileName || 'chưa chọn'; $('formTitle').textContent = 'Sửa phim (chọn lại file nếu bị di chuyển)'; $('btnCancel').style.display = '';
+  formAudioHandle = null; formAudioName = ''; audioCleared = false;
+  $('fAudioUrl').value = m.audioUrl || ''; $('fEmbed').value = m.embed || '';
+  $('pickedAudio').textContent = m.audioFileName || 'chưa chọn';
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 $('btnCancel').onclick = resetForm;
@@ -743,24 +846,52 @@ $('btnPick').onclick = async () => {
     try { const f = await pickViaInput(); formFileName = f.name; $('pickedName').textContent = f.name + ' (không nhớ được đường dẫn)'; if (!$('fTitle').value) $('fTitle').value = f.name.replace(/\.[^.]+$/, ''); } catch {}
   }
 };
+$('btnPickAudio').onclick = async () => {
+  if (window.showOpenFilePicker) {
+    try {
+      const [h] = await showOpenFilePicker({ types: [{ description: 'Audio', accept: { 'audio/*': ['.mp3', '.m4a', '.aac', '.flac', '.ogg', '.opus', '.wav'] } }] });
+      formAudioHandle = h; formAudioName = h.name; audioCleared = false; $('pickedAudio').textContent = h.name;
+    } catch {}
+  } else {
+    try { const f = await pickViaInput(); formAudioName = f.name; formAudioHandle = null; audioCleared = false; $('pickedAudio').textContent = f.name + ' (sẽ hỏi chọn lại khi phát)'; } catch {}
+  }
+};
+$('btnClearAudio').onclick = () => { formAudioHandle = null; formAudioName = ''; audioCleared = true; $('fAudioUrl').value = ''; $('pickedAudio').textContent = 'chưa chọn'; };
 $('btnSave').onclick = async () => {
   const title = $('fTitle').value.trim(), url = $('fUrl').value.trim();
+  const embed = $('fEmbed').value.trim(), audioUrl = $('fAudioUrl').value.trim();
   if (!title) return toast('Nhập tên phim');
   if (url && !/^https?:\/\//.test(url)) return toast('Link phải bắt đầu bằng http(s)://');
-  const hasSrc = formHandle || formFileName || url || (editing && (editing.handle || editing.fileName || editing.url));
-  if (!hasSrc) return toast('Chọn file phim hoặc nhập link video trực tiếp');
-  const data = { title, url, notes: $('fNotes').value.trim(), rating: $('fRating').value, preset: $('fPreset').value };
+  if (audioUrl && !/^https?:\/\//.test(audioUrl)) return toast('Link audio phải bắt đầu bằng http(s)://');
+  if (embed && !/^https?:\/\//.test(embed)) return toast('Link iframe phải bắt đầu bằng http(s)://');
+  const hasSrc = embed || formHandle || formFileName || url || (editing && (editing.handle || editing.fileName || editing.url));
+  if (!hasSrc) return toast('Chọn file phim, nhập link video, hoặc nhúng iframe');
+  const hasAudio = audioUrl || formAudioHandle || formAudioName || (editing && !audioCleared && (editing.audioHandle || editing.audioFileName));
+  if (embed && !hasAudio) return toast('Chế độ iframe cần thêm file audio (hoặc link audio).');
+  const data = { title, url, embed, audioUrl, notes: $('fNotes').value.trim(), rating: $('fRating').value, preset: $('fPreset').value };
   let m;
   if (editing) { m = editing; Object.assign(m, data); }
   else m = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8), createdAt: Date.now(), progress: 0, ...data };
   if (formHandle) { m.handle = formHandle; m.fileName = formHandle.name; }
   else if (formFileName) { delete m.handle; m.fileName = formFileName; }
+  if (audioCleared) { delete m.audioHandle; delete m.audioFileName; }
+  if (formAudioHandle) { m.audioHandle = formAudioHandle; m.audioFileName = formAudioHandle.name; }
+  else if (formAudioName) { delete m.audioHandle; m.audioFileName = formAudioName; }
+  const yid = ytId(embed); if (yid && !m.poster) m.poster = `https://i.ytimg.com/vi/${yid}/hqdefault.jpg`;
   await saveEntry(m);
   if (!editing) movies.unshift(m);
   resetForm(); render();
 };
 $('btnQuick').onclick = async () => {
   try { const f = await pickViaInput(); play({ id: 'tmp', title: f.name, preset: 'Rạp phim', progress: 0 }, f); } catch {}
+};
+$('btnQuick2').onclick = async () => {
+  try {
+    const fs = await pickMany(); const isA = f => f.type.startsWith('audio') || AUD_EXT.test(f.name);
+    const a = fs.find(isA), v = fs.find(f => !isA(f));
+    if (!a || !v) return toast('Hãy chọn đúng 2 file: 1 video + 1 audio (giữ Ctrl/Shift khi chọn).', 5000);
+    play({ id: 'tmp', title: v.name, preset: 'Rạp phim', progress: 0 }, v, a);
+  } catch {}
 };
 
 /* ---- cấu hình máy / cường độ preset / nâng cao ---- */
